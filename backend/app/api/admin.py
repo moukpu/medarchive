@@ -52,6 +52,54 @@ async def trigger_processing(background: BackgroundTasks):
     return {"status": "processing_started"}
 
 
+@router.post("/rematch")
+async def rematch_all(background: BackgroundTasks):
+    """Перезапустить matching для всех позиций (после обновления справочника)."""
+    async def _rematch():
+        from app.pipeline.normalize import CatalogIndex
+        from app.models import MatchMethod
+        async with SessionLocal() as session:
+            index = await CatalogIndex.build(session)
+            res = await session.execute(
+                select(PriceItem).where(PriceItem.is_active.is_(True))
+            )
+            items = res.scalars().all()
+            updated = 0
+            for item in items:
+                match = index.match(item.service_name_raw or "")
+                item.service_id = match.service_id
+                item.match_score = match.score
+                item.match_method = match.method if match.service_id else MatchMethod.none
+                item.needs_review = match.service_id is None
+                updated += 1
+            await session.commit()
+            return updated
+    background.add_task(_rematch)
+    return {"status": "rematch_started"}
+
+
+@router.post("/reprocess-errors")
+async def reprocess_errors(background: BackgroundTasks):
+    """Сбросить error/processing документы в pending и запустить обработку."""
+    async def _reset_and_process():
+        from app.models import ParseStatus
+        async with SessionLocal() as session:
+            res = await session.execute(
+                select(PriceDocument).where(
+                    PriceDocument.parse_status.in_([ParseStatus.error, ParseStatus.processing])
+                )
+            )
+            docs = res.scalars().all()
+            for doc in docs:
+                doc.parse_status = ParseStatus.pending
+                doc.parse_log = (doc.parse_log or "") + "\n[Сброшен в pending для повторной обработки]"
+            await session.commit()
+        async with SessionLocal() as session:
+            await process_pending(session)
+    background.add_task(_reset_and_process)
+    return {"status": "reprocess_started"}
+
+
 @router.get("/dashboard", response_model=DashboardOut)
 async def dashboard(session: AsyncSession = Depends(get_session)):
     docs_total = (await session.execute(select(func.count(PriceDocument.doc_id)))).scalar_one()

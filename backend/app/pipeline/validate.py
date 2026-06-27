@@ -42,6 +42,19 @@ def validate_row(
         res = convert_to_kzt(res, row.currency, effective)
         nonres = convert_to_kzt(nonres, row.currency, effective)
         out.warnings.append(f"Валюта {row.currency} сконвертирована в KZT")
+    # Защита от overflow NUMERIC(14,2): цена > 10^12 — мусор парсинга
+    MAX_PRICE = 999_999_999_999.0  # NUMERIC(14,2) max
+    for label, val in (("резидент", res), ("нерезидент", nonres)):
+        if val is not None and abs(val) > MAX_PRICE:
+            out.needs_review = True
+            out.warnings.append(f"Аномальная цена ({label}): {val:.0f} — ограничена до 0")
+            if label == "резидент":
+                res = 0.0
+            else:
+                nonres = 0.0
+    if out.price_original is not None and abs(out.price_original) > MAX_PRICE:
+        out.price_original = 0.0
+
     out.price_resident_kzt = res
     out.price_nonresident_kzt = nonres
 
