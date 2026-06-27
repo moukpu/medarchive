@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     data_dir: Path = BASE_DIR / "data"
 
     # Нормализация
-    match_threshold: float = 0.85  # >= порог → авто-матч, иначе очередь unmatched
+    match_threshold: float = 0.70  # >= порог → авто-матч, иначе очередь unmatched
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     use_embeddings: bool = True  # можно отключить для быстрого старта без модели
 

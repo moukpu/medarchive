@@ -191,11 +191,22 @@ async def process_pending(session: AsyncSession) -> int:
     т.к. async-сессия SQLAlchemy не рассчитана на конкурентное использование.
     """
     res = await session.execute(
-        select(PriceDocument.doc_id).where(PriceDocument.parse_status == ParseStatus.pending)
+        select(PriceDocument.doc_id, PriceDocument.file_path).where(PriceDocument.parse_status == ParseStatus.pending)
     )
-    doc_ids = [r[0] for r in res.all()]
-    if not doc_ids:
+    docs = res.all()
+    if not docs:
         return 0
+    
+    import os
+    def get_size(path):
+        try:
+            return os.path.getsize(path)
+        except OSError:
+            return float('inf')
+            
+    docs_sorted = sorted(docs, key=lambda d: get_size(d[1]))
+    doc_ids = [d[0] for d in docs_sorted]
+    
     index = await CatalogIndex.build(session)
 
     sem = asyncio.Semaphore(max(1, settings.process_concurrency))
@@ -205,5 +216,10 @@ async def process_pending(session: AsyncSession) -> int:
             async with SessionLocal() as task_session:
                 await process_document(task_session, doc_id, index=index)
 
-    await asyncio.gather(*(_worker(doc_id) for doc_id in doc_ids))
+    # Запускаем задачи в порядке возрастания размера
+    tasks = [_worker(doc_id) for doc_id in doc_ids]
+    for task in tasks:
+        asyncio.create_task(task)
+        await asyncio.sleep(0.5) # Небольшая задержка, чтобы семафор захватывался строго в нужном порядке
+        
     return len(doc_ids)
