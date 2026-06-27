@@ -242,8 +242,14 @@ async def process_pending(session: AsyncSession) -> int:
 
     # Запускаем задачи в порядке возрастания размера
     tasks = [_worker(doc_id) for doc_id in doc_ids]
+    running_tasks = []
     for task in tasks:
-        asyncio.create_task(task)
+        running_tasks.append(asyncio.create_task(task))
         await asyncio.sleep(0.5) # Небольшая задержка, чтобы семафор захватывался строго в нужном порядке
+        
+    # Обязательно дожидаемся выполнения всех задач, иначе BackgroundTasks завершится,
+    # а задачи могут быть убиты сборщиком мусора.
+    if running_tasks:
+        await asyncio.gather(*running_tasks, return_exceptions=True)
         
     return len(doc_ids)
