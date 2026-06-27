@@ -154,6 +154,17 @@ async def reprocess_errors(background: BackgroundTasks):
     return {"status": "reprocess_started"}
 
 
+@router.post("/clear-db")
+async def clear_database(session: AsyncSession = Depends(get_session)):
+    """Очистить базу данных (TRUNCATE всех таблиц CASCADE)."""
+    from sqlalchemy import text
+    # TRUNCATE удаляет данные из таблиц, CASCADE обрабатывает внешние ключи.
+    await session.execute(text("TRUNCATE TABLE price_items, price_documents, partners, services CASCADE;"))
+    await session.commit()
+    return {"status": "db_cleared"}
+
+
+
 @router.get("/dashboard", response_model=DashboardOut)
 async def dashboard(session: AsyncSession = Depends(get_session)):
     docs_total = (await session.execute(select(func.count(PriceDocument.doc_id)))).scalar_one()

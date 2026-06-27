@@ -72,4 +72,5 @@ export const api = {
     if (!r.ok) throw new Error(`${r.status}`);
     return r.json();
   },
+  clearDb: () => post<{status: string}>(`/admin/clear-db`),
 };

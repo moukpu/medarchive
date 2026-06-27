@@ -11,6 +11,7 @@ import {
   WarningCircle,
   Spinner as SpinnerIcon,
   Clock,
+  Trash,
 } from "@phosphor-icons/react";
 import { api, type DocumentStatus } from "../api";
 import { Badge, PageHeader, Spinner } from "./ui";
@@ -152,7 +153,30 @@ export function DashboardView() {
       />
 
       <div className="relative z-10 px-0">
-        <PageHeader title="MedArchive AI" description="Предиктивная аналитика и автоматизированная нормализация медицинских прайсов." />
+        <div className="flex items-center justify-between">
+          <PageHeader title="MedArchive AI" description="Предиктивная аналитика и автоматизированная нормализация медицинских прайсов." />
+          <button
+            onClick={async () => {
+              if (window.confirm("ВЫ УВЕРЕНЫ? Это удалит все документы, услуги, прайсы и партнеров из базы данных!")) {
+                setUploading(true);
+                try {
+                  await api.clearDb();
+                  window.alert("База данных успешно очищена.");
+                  window.location.reload();
+                } catch (e) {
+                  window.alert("Ошибка очистки: " + e);
+                } finally {
+                  setUploading(false);
+                }
+              }
+            }}
+            disabled={uploading}
+            className="flex items-center gap-2 rounded-xl bg-danger-50 px-4 py-2 text-sm font-medium text-danger-600 border border-danger-500/20 hover:bg-danger-100 transition-colors disabled:opacity-50"
+          >
+            <Trash size={18} />
+            Очистить БД
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Главная колонка загрузки (Bento Grid - Main span 2) */}
