@@ -191,7 +191,7 @@ export function DashboardView() {
                   className="mt-4 shadow-popover"
                   shimmerColor="var(--color-primary-300)"
                   shimmerSize="0.08em"
-                  background="var(--color-ink)"
+                  background="var(--color-surface)"
                   onClick={() => inputRef.current?.click()} 
                   disabled={uploading}
                 >
