@@ -107,7 +107,7 @@ export function DashboardView() {
       const docIds: string[] = r.doc_ids ?? [];
       setMsg(`Поставлено документов в обработку: ${r.queued_documents ?? docIds.length}.`);
       if (docIds.length) {
-        setBatch(docIds.map(id => ({ doc_id: id, file_name: "Загрузка...", parse_status: "pending", parsed_at: "" })));
+        setBatch(docIds.map(id => ({ doc_id: id, file_name: "Загрузка...", parse_status: "pending", parsed_at: "", file_format: "zip" })));
       } else {
         load();
       }
