@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { MagnifyingGlass, ArrowLeft, ArrowRight, Buildings, Tag } from "@phosphor-icons/react";
-import { api, type PartnerWithPrice, type Service } from "../api";
+import { api, type PartnerWithPrice, type Service, type SearchItem } from "../api";
 import { Badge, Button, Card, EmptyState, Input, LoadingBlock, PageHeader, SkeletonRow } from "./ui";
 import { formatKzt } from "../format";
 
 export function SearchView() {
   const [q, setQ] = useState("");
   const [services, setServices] = useState<Service[]>([]);
+  const [items, setItems] = useState<SearchItem[]>([]);
   const [selected, setSelected] = useState<Service | null>(null);
   const [partnersList, setPartnersList] = useState<PartnerWithPrice[]>([]);
   const [status, setStatus] = useState<"idle" | "loading" | "done">("idle");
@@ -20,10 +21,12 @@ export function SearchView() {
     try {
       const r = await api.search(q);
       setServices(r.services);
+      setItems(r.items ?? []);
       setStatus("done");
     } catch {
       setStatus("done");
       setServices([]);
+      setItems([]);
     }
   };
 
@@ -37,11 +40,13 @@ export function SearchView() {
     }
   };
 
+  const nothing = status === "done" && services.length === 0 && items.length === 0;
+
   return (
     <div>
       <PageHeader
         title="Поиск услуги"
-        description="Найдите, какие клиники-партнёры оказывают услугу и сравните цены."
+        description="Найдите услугу в прайсах клиник-партнёров и сравните цены."
       />
 
       {!selected && (
@@ -67,7 +72,7 @@ export function SearchView() {
             <EmptyState
               icon={<MagnifyingGlass size={24} />}
               title="Начните поиск"
-              description="Введите название услуги — например «УЗИ» или «общий анализ крови» — чтобы увидеть партнёров и цены."
+              description="Введите название услуги — например «УЗИ» или «общий анализ крови» — чтобы увидеть клиники и цены."
             />
           )}
 
@@ -79,39 +84,82 @@ export function SearchView() {
             </div>
           )}
 
-          {status === "done" && services.length === 0 && (
+          {nothing && (
             <EmptyState
               icon={<MagnifyingGlass size={24} />}
               title="Ничего не найдено"
-              description={`По запросу «${q}» услуг не найдено. Проверьте написание или попробуйте более общий термин.`}
+              description={`По запросу «${q}» ничего нет. Проверьте написание или попробуйте более общий термин.`}
             />
           )}
 
-          {status === "done" && services.length > 0 && (
-            <div className="space-y-2.5">
-              <p className="text-sm text-ink-muted">Найдено услуг: {services.length}</p>
-              {services.map((s) => (
-                <Card
-                  key={s.service_id}
-                  padded={false}
-                  className="hover-lift group flex cursor-pointer items-center justify-between gap-4 p-4"
-                >
-                  <button onClick={() => openService(s)} className="flex w-full cursor-pointer items-center justify-between gap-4 text-left">
-                    <div>
-                      <p className="font-semibold text-ink">{s.service_name}</p>
-                      {s.category && (
-                        <Badge tone="primary" className="mt-1.5">
-                          <Tag size={12} /> {s.category}
-                        </Badge>
+          {/* Реальные позиции прайсов — основная выдача, сразу с ценой */}
+          {status === "done" && items.length > 0 && (
+            <section className="mb-8">
+              <div className="mb-3 flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-ink">Найдено в прайсах</h3>
+                <Badge tone="primary">{items.length}</Badge>
+              </div>
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                {items.map((it) => (
+                  <Card key={it.item_id} padded={false} className="hover-lift flex flex-col gap-2 p-4">
+                    <p className="font-semibold leading-snug text-ink">{it.service_name_raw}</p>
+                    <div className="flex items-center gap-1.5 text-xs text-ink-muted">
+                      <Buildings size={13} className="text-ink-faint" />
+                      <span className="truncate">{it.partner_name}</span>
+                      {it.city && (
+                        <>
+                          <span className="text-ink-faint">·</span>
+                          <span>{it.city}</span>
+                        </>
                       )}
                     </div>
-                    <span className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary-600 opacity-80 group-hover:opacity-100">
-                      Кто оказывает <ArrowRight size={16} />
-                    </span>
-                  </button>
-                </Card>
-              ))}
-            </div>
+                    <div className="mt-1 flex items-end justify-between gap-3 border-t border-line pt-2.5">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-ink-faint">Резидент</p>
+                        <p className="text-lg font-bold text-primary-300">{formatKzt(it.price_resident_kzt)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[11px] uppercase tracking-wide text-ink-faint">Нерезидент</p>
+                        <p className="text-sm font-medium text-ink-muted">{formatKzt(it.price_nonresident_kzt)}</p>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Справочные услуги — клик ведёт к сравнению по всем партнёрам */}
+          {status === "done" && services.length > 0 && (
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-ink">Услуги справочника</h3>
+                <Badge tone="neutral">{services.length}</Badge>
+              </div>
+              <div className="space-y-2.5">
+                {services.map((s) => (
+                  <Card
+                    key={s.service_id}
+                    padded={false}
+                    className="hover-lift group flex cursor-pointer items-center justify-between gap-4 p-4"
+                  >
+                    <button onClick={() => openService(s)} className="flex w-full cursor-pointer items-center justify-between gap-4 text-left">
+                      <div>
+                        <p className="font-semibold text-ink">{s.service_name}</p>
+                        {s.category && (
+                          <Badge tone="primary" className="mt-1.5">
+                            <Tag size={12} /> {s.category}
+                          </Badge>
+                        )}
+                      </div>
+                      <span className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary-300 opacity-80 group-hover:opacity-100">
+                        Сравнить цены <ArrowRight size={16} />
+                      </span>
+                    </button>
+                  </Card>
+                ))}
+              </div>
+            </section>
           )}
         </>
       )}
@@ -152,7 +200,7 @@ export function SearchView() {
                   </thead>
                   <tbody>
                     {partnersList.map((p) => (
-                      <tr key={p.item_id} className="border-b border-line last:border-0 hover:bg-canvas/60">
+                      <tr key={p.item_id} className="border-b border-line last:border-0 hover:bg-white/[0.03]">
                         <td className="px-5 py-3.5">
                           <p className="font-medium text-ink">{p.partner.name}</p>
                           {p.partner.city && <p className="text-xs text-ink-faint">{p.partner.city}</p>}

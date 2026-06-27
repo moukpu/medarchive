@@ -4,41 +4,42 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  --color-primary-50: #ecfeff;
-  --color-primary-100: #cffafe;
-  --color-primary-200: #a5f3fc;
-  --color-primary-300: #67e8f9;
-  --color-primary-400: #22d3ee;
-  --color-primary-500: #06b6d4;
-  --color-primary-600: #0891b2;
-  --color-primary-700: #0e7490;
-  --color-primary-800: #155e75;
-  --color-primary-900: #164e63;
+  /* Premium dark theme — electric violet on near-black with subtle glow. */
+  --color-primary-50: #f1eefe;
+  --color-primary-100: #e4ddfd;
+  --color-primary-200: #c9bcfb;
+  --color-primary-300: #ab98f8;
+  --color-primary-400: #8f76f4;
+  --color-primary-500: #7c5cff;
+  --color-primary-600: #6d44f0;
+  --color-primary-700: #5a33d6;
+  --color-primary-800: #4827a8;
+  --color-primary-900: #361e7d;
 
-  --color-accent-50: #ecfdf5;
-  --color-accent-100: #d1fae5;
-  --color-accent-500: #10b981;
-  --color-accent-600: #059669;
-  --color-accent-700: #047857;
+  --color-accent-50: #e8fdff;
+  --color-accent-100: #c7f9ff;
+  --color-accent-500: #22d3ee;
+  --color-accent-600: #06b6d4;
+  --color-accent-700: #0e7490;
 
-  --color-surface: #ffffff;
-  --color-canvas: #f7f9fb;
-  --color-ink: #0f172a;
-  --color-ink-muted: #64748b;
-  --color-ink-faint: #94a3b8;
-  --color-line: #e6ebf0;
-  --color-line-strong: #cbd5e1;
+  --color-surface: #14161f;
+  --color-canvas: #0a0b12;
+  --color-ink: #f4f5fb;
+  --color-ink-muted: #a2a7c0;
+  --color-ink-faint: #71769a;
+  --color-line: #23263a;
+  --color-line-strong: #343852;
 
-  --color-danger-50: #fef2f2;
-  --color-danger-500: #ef4444;
-  --color-danger-600: #dc2626;
+  --color-danger-50: #2a1620;
+  --color-danger-500: #fb7185;
+  --color-danger-600: #f43f5e;
 
-  --color-warning-50: #fffbeb;
-  --color-warning-500: #f59e0b;
-  --color-warning-600: #d97706;
+  --color-warning-50: #2a2210;
+  --color-warning-500: #fbbf24;
+  --color-warning-600: #f59e0b;
 
-  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 1px 0 rgb(15 23 42 / 0.03);
-  --shadow-popover: 0 12px 24px -8px rgb(15 23 42 / 0.12), 0 4px 8px -4px rgb(15 23 42 / 0.06);
+  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 1px 1px 0 rgb(0 0 0 / 0.3);
+  --shadow-popover: 0 20px 40px -12px rgb(0 0 0 / 0.6), 0 8px 16px -8px rgb(124 92 255 / 0.18);
 
   --animate-fade-in: fade-in 180ms ease-out;
   --animate-fade-in-up: fade-in-up 400ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -106,10 +107,14 @@
   }
   body {
     background-color: var(--color-canvas);
+    background-image:
+      radial-gradient(60rem 40rem at 12% -8%, rgb(124 92 255 / 0.16), transparent 60%),
+      radial-gradient(50rem 38rem at 100% 0%, rgb(34 211 238 / 0.10), transparent 55%);
+    background-attachment: fixed;
     color: var(--color-ink);
   }
   ::selection {
-    background-color: var(--color-primary-200);
+    background-color: rgb(124 92 255 / 0.35);
   }
   :focus-visible {
     outline: 2px solid var(--color-primary-500);
@@ -126,14 +131,14 @@
   .glass-panel {
     position: relative;
     isolation: isolate;
-    background: rgb(255 255 255 / 0.8);
-    -webkit-backdrop-filter: blur(10px) saturate(140%);
-    backdrop-filter: blur(10px) saturate(140%);
-    border: 1px solid rgb(255 255 255 / 0.6);
+    background: rgb(20 22 31 / 0.72);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+    backdrop-filter: blur(16px) saturate(150%);
+    border: 1px solid rgb(255 255 255 / 0.07);
     box-shadow:
-      inset 0 1px 0 0 rgb(255 255 255 / 0.8),
-      inset 0 0 0 1px rgb(255 255 255 / 0.15),
-      0 8px 24px -8px rgb(15 23 42 / 0.12);
+      inset 0 1px 0 0 rgb(255 255 255 / 0.06),
+      inset 0 0 0 1px rgb(255 255 255 / 0.03),
+      0 16px 40px -16px rgb(0 0 0 / 0.7);
     overflow: hidden;
   }
   .glass-panel::before {
@@ -143,8 +148,8 @@
     background: linear-gradient(
       115deg,
       transparent 35%,
-      rgb(255 255 255 / 0.5) 48%,
-      rgb(255 255 255 / 0.5) 52%,
+      rgb(124 92 255 / 0.14) 48%,
+      rgb(34 211 238 / 0.14) 52%,
       transparent 65%
     );
     transform: translateX(-60%);

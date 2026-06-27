@@ -76,15 +76,15 @@ export function Layout({ tab, onTabChange, children }: { tab: Tab; onTabChange: 
                   }}
                   aria-current={isActive ? "page" : undefined}
                   className={`group relative flex w-full cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
-                    isActive ? "text-primary-700" : "text-ink-muted hover:bg-white/60 hover:text-ink"
+                    isActive ? "text-primary-200" : "text-ink-muted hover:bg-white/5 hover:text-ink"
                   }`}
                 >
                   {isActive && (
-                    <span className="animate-fade-in absolute inset-0 rounded-lg bg-primary-50/90" aria-hidden="true" />
+                    <span className="animate-fade-in absolute inset-0 rounded-lg bg-primary-500/15 ring-1 ring-inset ring-primary-500/30" aria-hidden="true" />
                   )}
                   {isActive && (
                     <span
-                      className="animate-fade-in absolute inset-y-1.5 left-0 w-1 rounded-full bg-primary-600"
+                      className="animate-fade-in absolute inset-y-1.5 left-0 w-1 rounded-full bg-primary-400 shadow-[0_0_12px_2px_rgb(124_92_255_/_0.6)]"
                       aria-hidden="true"
                     />
                   )}
@@ -92,7 +92,7 @@ export function Layout({ tab, onTabChange, children }: { tab: Tab; onTabChange: 
                     size={20}
                     weight={isActive ? "fill" : "regular"}
                     className={`relative z-10 transition-transform duration-200 group-hover:scale-110 ${
-                      isActive ? "text-primary-600" : "text-ink-faint group-hover:text-ink-muted"
+                      isActive ? "text-primary-300" : "text-ink-faint group-hover:text-ink-muted"
                     }`}
                   />
                   <span className="relative z-10">{item.label}</span>
@@ -101,7 +101,7 @@ export function Layout({ tab, onTabChange, children }: { tab: Tab; onTabChange: 
             })}
           </nav>
 
-          <div className="mt-auto rounded-lg bg-white/50 px-3 py-3 text-xs text-ink-muted">
+          <div className="mt-auto rounded-lg border border-white/5 bg-white/[0.03] px-3 py-3 text-xs text-ink-muted">
             <p className="font-semibold text-ink">MedPartners · Кейс 2</p>
             <p className="mt-0.5">Автоматическая обработка архива прайс-листов клиник</p>
           </div>

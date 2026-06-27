@@ -49,35 +49,36 @@ def _is_scanned_pdf(path: str) -> bool:
             if page_area <= 0:
                 continue
 
-            # Проверка 1: крупные изображения (>50% площади страницы)
-            has_large_image = False
+            # ПРИОРИТЕТ — текстовый слой. Цифровой PDF с фирменным бланком/печатью
+            # (крупная картинка) всё равно имеет извлекаемый текст — это НЕ скан.
+            # Проверяем текст ПЕРВЫМ, иначе картинка-фон ложно метит документ сканом.
+            text = page.get_text("text").strip()
+            words = len(page.get_text("words"))
+            alpha_digit = sum(1 for c in text if c.isalpha() or c.isdigit() or c.isspace())
+            quality = alpha_digit / len(text) if text else 0.0
+            if words >= 20 and quality >= 0.6:
+                continue  # полноценный текст-слой → страница не скан
+
+            # Текста мало/он мусорный → это либо скан, либо страница-картинка.
+            if len(text) < 50:
+                scan_pages += 1
+                continue
+            if quality < 0.6:
+                scan_pages += 1
+                continue
+
+            # Текст пограничный + крупное изображение (>50% площади) → скан.
             try:
                 for img in page.get_images(full=True):
                     try:
                         bbox = page.get_image_bbox(img)
-                        img_area = bbox.width * bbox.height
-                        if img_area / page_area > 0.5:
-                            has_large_image = True
+                        if (bbox.width * bbox.height) / page_area > 0.5:
+                            scan_pages += 1
                             break
                     except Exception:
                         continue
             except Exception:
                 pass
-
-            if has_large_image:
-                scan_pages += 1
-                continue
-
-            # Проверка 2: мало текста или мусорный текст
-            text = page.get_text("text").strip()
-            if len(text) < 50:
-                scan_pages += 1
-                continue
-
-            # Проверка 3: качество текста — много мусорных символов = OCR-слой
-            alpha_digit = sum(1 for c in text if c.isalpha() or c.isdigit() or c.isspace())
-            if len(text) > 0 and alpha_digit / len(text) < 0.6:
-                scan_pages += 1
 
         doc.close()
         # Если >50% проверенных страниц — сканы, весь документ — скан

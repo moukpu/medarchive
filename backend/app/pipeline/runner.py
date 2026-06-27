@@ -139,10 +139,17 @@ async def process_document(session: AsyncSession, doc_id: str, index: CatalogInd
             index = await CatalogIndex.build(session)
 
         # Embedding-тир — одним батчем на все имена документа (минимум вызовов GPU).
-        await index.prepare(session, [r.service_name_raw for r in result.rows])
+        raw_names = [r.service_name_raw for r in result.rows]
+        await index.prepare(session, raw_names)
+        # LLM-фоллбэк (скальпель): нормализуем строки, не дотянувшие до порога, и
+        # помечаем немедицинские как мусор.
+        await index.llm_refine(session, raw_names)
 
         needs_review_doc = False
         for row in result.rows:
+            if index.is_garbage(row.service_name_raw):
+                log.append(f"{row.service_name_raw}: отброшено — LLM счёл немедицинской позицией")
+                continue
             prev = await _prev_resident(session, doc.partner_id, row.service_name_raw)
             v = validate_row(row, doc.effective_date, prev_resident_kzt=prev)
             if v.skip:

@@ -47,6 +47,8 @@ class CatalogIndex:
         self.use_pgvector: bool = False
         # кэш embedding-тира: raw_name -> (service_id, score), заполняется в prepare()
         self._emb_cache: dict[str, tuple[str | None, float]] = {}
+        # строки, признанные LLM немедицинскими (мусор) — откидываются в runner
+        self._garbage: set[str] = set()
 
     @classmethod
     async def build(cls, session: AsyncSession) -> "CatalogIndex":
@@ -109,6 +111,70 @@ class CatalogIndex:
         for name, res in zip(names, results):
             self._emb_cache[name] = res
 
+    async def llm_refine(self, session: AsyncSession, raw_names: list[str]) -> None:
+        """Резервный LLM-слой для строк, которые embedding-тир не сматчил уверенно.
+
+        Точечный «скальпель» (Fallback Loop): берём только строки с embedding-скором
+        ниже `embedding_match_threshold`, просим LLM нормализовать каждую в
+        общепринятый медицинский термин, затем ПОВТОРНО ищем по вектору уже
+        нормализованное имя. Строки, которые LLM признал немедицинскими, уходят в
+        `_garbage` (runner их откидывает). Безопасно при выключенном/недоступном LLM.
+        """
+        if not settings.use_llm_extraction:
+            return
+        from app.matching.llm_normalize import llm_normalize_name
+
+        # сложные строки: embedding не нашёл уверенного совпадения
+        dirty: list[str] = []
+        for n in dict.fromkeys(raw_names):
+            if not n or n in self._garbage:
+                continue
+            cached = self._emb_cache.get(n)
+            if cached is None:
+                continue
+            sid, score = cached
+            if sid is None or score < settings.embedding_match_threshold:
+                dirty.append(n)
+        if not dirty:
+            return
+
+        # 1. LLM нормализует каждую грязную строку по одной (скальпель, не пачкой)
+        normalized: dict[str, str] = {}
+        for n in dirty:
+            norm = await asyncio.to_thread(llm_normalize_name, n)
+            if norm is None:
+                self._garbage.add(n)        # не мед. услуга → мусор
+            elif norm and norm != n:
+                normalized[n] = norm
+        if not normalized:
+            return
+
+        # 2. повторный векторный поиск по нормализованным именам (одним батчем)
+        raws = list(normalized.keys())
+        texts = [normalized[r] for r in raws]
+        if self.use_pgvector:
+            from app.matching import pgvector_match as pgv
+            from app.matching.embed_service import embed_texts
+
+            vecs = await asyncio.to_thread(embed_texts, texts)
+            if vecs is None:
+                return
+            results = await pgv.query_vectors(session, vecs)
+        elif self.embedding is not None:
+            results = await asyncio.to_thread(self.embedding.query_many, texts)
+        else:
+            return
+
+        # 3. если повторный поиск дал лучший результат — обновляем кэш под ИСХОДНЫМ именем
+        for raw, (e_sid, e_score) in zip(raws, results):
+            old = self._emb_cache.get(raw)
+            if e_sid is not None and (old is None or e_score > old[1]):
+                self._emb_cache[raw] = (e_sid, e_score)
+
+    def is_garbage(self, raw_name: str) -> bool:
+        """LLM пометил строку как немедицинскую — её следует откинуть."""
+        return raw_name in self._garbage
+
     def match(self, raw_name: str) -> MatchResult:
         n = _norm(raw_name)
         if not n:
@@ -122,12 +188,17 @@ class CatalogIndex:
         # 3. fuzzy
         sid, score = best_fuzzy(raw_name, self.fuzzy_choices)
         best = MatchResult(sid, score, MatchMethod.fuzzy)
-        # 4. эмбеддинги (если посчитаны в prepare и fuzzy не уверен)
+        # 4. эмбеддинги (prepare/llm_refine) — принимаем ТОЛЬКО при жёстком пороге
+        # косинусного сходства: ниже порога «притянутые за уши» матчи отбрасываем.
         if score < 0.95:
             cached = self._emb_cache.get(raw_name)
             if cached is not None:
                 e_sid, e_score = cached
-                if e_sid is not None and e_score > score:
+                if (
+                    e_sid is not None
+                    and e_score >= settings.embedding_match_threshold
+                    and e_score > score
+                ):
                     best = MatchResult(e_sid, e_score, MatchMethod.embedding)
         if best.service_id is None or best.score < settings.match_threshold:
             # не дотянули до порога — оставляем предложение, но без авто-привязки

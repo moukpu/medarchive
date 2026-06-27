@@ -81,8 +81,8 @@ export function Badge({
 
 export function EmptyState({ icon, title, description, action }: { icon?: ReactNode; title: string; description?: string; action?: ReactNode }) {
   return (
-    <div className="animate-fade-in-up flex flex-col items-center justify-center rounded-xl border border-dashed border-line-strong bg-white px-6 py-14 text-center">
-      {icon && <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary-50 text-primary-600">{icon}</div>}
+    <div className="animate-fade-in-up flex flex-col items-center justify-center rounded-xl border border-dashed border-line-strong bg-surface px-6 py-14 text-center">
+      {icon && <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary-500/15 text-primary-300">{icon}</div>}
       <p className="text-sm font-semibold text-ink">{title}</p>
       {description && <p className="mt-1 max-w-sm text-sm text-ink-muted">{description}</p>}
       {action && <div className="mt-4">{action}</div>}
@@ -118,7 +118,7 @@ export function LoadingBlock({ label = "Загрузка…" }: { label?: string
 
 export function SkeletonRow() {
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-line bg-white p-4">
+    <div className="flex items-center gap-4 rounded-xl border border-line bg-surface p-4">
       <div className="skeleton-shimmer h-10 w-10 shrink-0 rounded-full" />
       <div className="flex-1 space-y-2">
         <div className="skeleton-shimmer h-3 w-1/3 rounded" />

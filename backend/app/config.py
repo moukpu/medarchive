@@ -32,6 +32,10 @@ class Settings(BaseSettings):
 
     # Нормализация
     match_threshold: float = 0.70  # >= порог → авто-матч, иначе очередь unmatched
+    # Жёсткий порог косинусного сходства для embedding-тира (pgvector/in-memory):
+    # >= порог → принимаем семантический матч; ниже → строка идёт в LLM-фоллбэк
+    # и/или помечается needs_review. Держим строгим, чтобы не «притягивать за уши».
+    embedding_match_threshold: float = 0.85
     # Лидер русских STS-бенчмарков (Encodechka/RusBEIR), 1024-dim, контекст 8192.
     # Обучен под semantic similarity (AnglE Loss) — точнее MiniLM на медицинской
     # номенклатуре. Тяжелее (~2 ГБ); для быстрого старта без модели — use_embeddings=false.
