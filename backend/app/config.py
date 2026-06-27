@@ -32,11 +32,17 @@ class Settings(BaseSettings):
 
     # Нормализация
     match_threshold: float = 0.70  # >= порог → авто-матч, иначе очередь unmatched
-    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    # Лидер русских STS-бенчмарков (Encodechka/RusBEIR), 1024-dim, контекст 8192.
+    # Обучен под semantic similarity (AnglE Loss) — точнее MiniLM на медицинской
+    # номенклатуре. Тяжелее (~2 ГБ); для быстрого старта без модели — use_embeddings=false.
+    embedding_model: str = "deepvk/USER-bge-m3"
     use_embeddings: bool = True  # можно отключить для быстрого старта без модели
 
     # OCR
     tesseract_lang: str = "rus+kaz+eng"
+    # DPI рендера страниц скан-PDF для vision-OCR. 220 точнее на плотных таблицах,
+    # чем 200; выше — больше токенов/времени. Tesseract-fallback всегда 300 DPI.
+    vision_ocr_dpi: int = 220
 
     # LLM-извлечение (OpenAI). Используется как fallback, когда детерминированный
     # парсер дал мало строк, и как vision-OCR для скан-PDF. Без ключа — тихо

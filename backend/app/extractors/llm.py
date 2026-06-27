@@ -220,7 +220,13 @@ def rows_from_text_llm(text: str) -> tuple[list[RawPriceRow], list[str]]:
 
 
 def rows_from_pdf_images_llm(path: str) -> tuple[list[RawPriceRow], list[str]]:
-    """Vision-OCR скан-PDF: рендерим страницы в PNG и распознаём таблицу моделью."""
+    """Vision-OCR скан-PDF: рендерим страницы в PNG и распознаём таблицу моделью.
+
+    Обработка ПОСТРАНИЧНАЯ (по одному изображению на вызов), а не пачкой: при
+    длинном контексте VLM начинают пропускать позиции и обрывать таблицы, поэтому
+    каждую страницу распознаём отдельным запросом, а результаты склеиваем с
+    дедупом. Это надёжнее на многостраничных сканах ценой бóльшего числа вызовов.
+    """
     if not llm_available():
         return [], []
     try:
@@ -233,28 +239,32 @@ def rows_from_pdf_images_llm(path: str) -> tuple[list[RawPriceRow], list[str]]:
     except Exception as exc:  # noqa: BLE001
         return [], [f"Не удалось открыть PDF для vision-OCR: {exc}"]
 
-    image_parts: list[dict] = []
     pages = min(len(doc), settings.llm_max_pages)
+    dpi = settings.vision_ocr_dpi
+    all_rows: list[RawPriceRow] = []
+    warnings: list[str] = [f"vision-OCR страниц: {pages} (DPI {dpi}, постранично)"]
     for i in range(pages):
-        page = doc[i]
-        # 200 DPI достаточно для распознавания текста таблиц, экономит токены
-        pix = page.get_pixmap(dpi=200)
+        pix = doc[i].get_pixmap(dpi=dpi)
         b64 = base64.b64encode(pix.tobytes("png")).decode("ascii")
-        image_parts.append(
-            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
-        )
+        content: list[dict] = [
+            {
+                "type": "text",
+                "text": (
+                    f"Страница {i + 1} из {pages}. Распознай ВСЕ строки-услуги с "
+                    "ценами из таблицы прайса на изображении и верни их."
+                ),
+            },
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+        ]
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": content},
+        ]
+        rows, w = _call(messages)
+        all_rows.extend(rows)
+        warnings.append(f"стр. {i + 1}: {len(rows)}")
     doc.close()
 
-    if not image_parts:
+    if pages == 0:
         return [], ["В PDF нет страниц для vision-OCR"]
-
-    content: list[dict] = [
-        {"type": "text", "text": "Распознай таблицу прайса на изображениях и верни строки."}
-    ]
-    content.extend(image_parts)
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": content},
-    ]
-    rows, warnings = _call(messages)
-    return rows, [f"vision-OCR страниц: {pages}", *warnings]
+    return _dedup(all_rows), warnings
