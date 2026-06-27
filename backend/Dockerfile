@@ -14,4 +14,4 @@ COPY . .
 
 EXPOSE 8000
 # shell-форма, чтобы развернуть $PORT (Render/Railway задают порт через эту переменную)
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
