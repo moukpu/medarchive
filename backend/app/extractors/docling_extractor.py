@@ -239,7 +239,15 @@ def rows_from_pdf_docling_local(path: str) -> tuple[list[RawPriceRow], list[str]
 
 
 def rows_from_pdf_docling(path: str) -> tuple[list[RawPriceRow], list[str]]:
-    """Диспетчер: если задан serve_url — удалённый GPU-путь, иначе локальный."""
+    """Диспетчер: если задан serve_url — пробует удалённый GPU-путь,
+    в случае недоступности сервера (ошибки подключения/таймаут) переключается на локальный."""
     if settings.docling_serve_url:
-        return rows_from_pdf_docling_remote(path, settings.docling_serve_url)
+        rows, warnings = rows_from_pdf_docling_remote(path, settings.docling_serve_url)
+        # Если RunPod недоступен/выключен, переключаемся на локальное железо
+        if not rows and any("docling-serve недоступен" in w for w in warnings):
+            warnings.append("Удалённый сервер недоступен, автоматический переход на локальный Docling (CPU)...")
+            local_rows, local_warnings = rows_from_pdf_docling_local(path)
+            rows.extend(local_rows)
+            warnings.extend(local_warnings)
+        return rows, warnings
     return rows_from_pdf_docling_local(path)
