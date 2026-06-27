@@ -39,6 +39,30 @@ async def upload_archive(
     return {"queued_documents": len(doc_ids), "doc_ids": doc_ids}
 
 
+@router.post("/upload-catalog")
+async def upload_catalog_file(
+    file: UploadFile,
+    replace: bool = False,
+    session: AsyncSession = Depends(get_session),
+):
+    """Загрузить справочник услуг (XLSX/JSON). replace=true → старые услуги
+    помечаются is_active=false (обратимо), сверка идёт только по новому файлу."""
+    from sqlalchemy import update
+
+    from app.matching.catalog import load_catalog
+    from app.models import Service
+
+    suffix = Path(file.filename or "catalog.xlsx").suffix or ".xlsx"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+    if replace:
+        await session.execute(update(Service).values(is_active=False))
+        await session.commit()
+    count = await load_catalog(session, tmp_path)
+    return {"loaded": count, "replaced": replace}
+
+
 @router.get("/status", response_model=list[DocumentStatusOut])
 async def documents_status(session: AsyncSession = Depends(get_session)):
     res = await session.execute(select(PriceDocument).order_by(PriceDocument.parsed_at.desc().nullslast()))
