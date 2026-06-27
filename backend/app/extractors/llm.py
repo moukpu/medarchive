@@ -1,4 +1,4 @@
-"""LLM-извлечение через OpenAI (structured outputs + vision).
+"""LLM-извлечение через Hugging Face Inference Providers (OpenAI-совместимый API + vision).
 
 Назначение — вытащить структурированные позиции прайса там, где детерминированный
 парсер (regex/ключевые слова) бессилен: шумный OCR, нестандартные шапки, слитые
@@ -8,7 +8,10 @@
   • vision-OCR для скан-PDF (pdf_scan): рендерим страницы в PNG и просим модель
     распознать таблицу напрямую — качественнее Tesseract на плохих сканах.
 
-Без ключа (`MEDARCHIVE_OPENAI_API_KEY` / `OPENAI_API_KEY`) модуль тихо
+Использует openai SDK с кастомным base_url, направленным на HF Inference
+Router (https://router.huggingface.co/v1). Бесплатный тир доступен.
+
+Без ключа (`MEDARCHIVE_HF_API_KEY` / `HF_TOKEN`) модуль тихо
 деградирует: `llm_available()` → False, функции возвращают пустой результат,
 а пайплайн продолжает работать на Tesseract/regex.
 """
@@ -33,7 +36,11 @@ _SYSTEM_PROMPT = (
     "Сохраняй исходное название услуги как в документе, без перевода и сокращений. "
     "Игнорируй заголовки секций, итоги, примечания и пустые строки без цены. "
     "Валюта по умолчанию KZT (тенге, ₸, тг); распознавай USD ($) и RUB (₽, руб). "
-    "Числа — без пробелов-разделителей и валютных символов."
+    "Числа — без пробелов-разделителей и валютных символов. "
+    "ВАЖНО: ответ СТРОГО в формате JSON (без маркдаун-обёртки, без пояснений), "
+    "структура: {\"rows\": [{\"service_name\": \"...\", \"price_resident\": число|null, "
+    "\"price_nonresident\": число|null, \"price_single\": число|null, "
+    "\"currency\": \"KZT\"|\"USD\"|\"RUB\", \"code\": \"...\"|null}, ...]}."
 )
 
 # JSON-схема для structured outputs (strict): модель обязана вернуть ровно это.
@@ -70,11 +77,11 @@ _SCHEMA = {
 
 
 def _api_key() -> str | None:
-    return settings.openai_api_key or os.environ.get("OPENAI_API_KEY")
+    return settings.hf_api_key or os.environ.get("HF_TOKEN")
 
 
 def llm_available() -> bool:
-    """LLM-извлечение включено и есть ключ + установлен пакет openai."""
+    """LLM-извлечение включено и есть HF-токен + установлен пакет openai."""
     if not settings.use_llm_extraction or not _api_key():
         return False
     try:
@@ -88,7 +95,10 @@ def llm_available() -> bool:
 def _client():
     from openai import OpenAI
 
-    return OpenAI(api_key=_api_key())
+    return OpenAI(
+        api_key=_api_key(),
+        base_url=settings.llm_base_url,
+    )
 
 
 def _rows_from_payload(payload: dict) -> list[RawPriceRow]:
@@ -123,37 +133,42 @@ def _rows_from_payload(payload: dict) -> list[RawPriceRow]:
     return rows
 
 
-def _create(messages: list[dict], response_format: dict):
-    """Вызов chat.completions, устойчивый к различиям моделей.
+def _create(messages: list[dict], response_format: dict | None = None):
+    """Вызов chat.completions через HF Inference Providers.
 
-    Новые модели (gpt-5.x) не принимают temperature!=1 и используют
-    max_completion_tokens. Поэтому temperature не шлём вовсе.
+    HF router поддерживает response_format={"type": "json_object"} для
+    большинства моделей. strict json_schema может не поддерживаться,
+    поэтому используем json_object + схема в промпте.
     """
-    return _client().chat.completions.create(
-        model=settings.openai_model,
-        messages=messages,
-        max_completion_tokens=16000,
-        response_format=response_format,
-    )
+    kwargs: dict = {
+        "model": settings.llm_model,
+        "messages": messages,
+        "max_tokens": 8192,
+        "temperature": 0.1,
+    }
+    if response_format:
+        kwargs["response_format"] = response_format
+    return _client().chat.completions.create(**kwargs)
 
 
 def _call(messages: list[dict]) -> tuple[list[RawPriceRow], list[str]]:
-    """Один вызов модели со structured output. Ошибки не валят пайплайн.
-
-    Сначала строгий json_schema; если модель его не поддерживает — откат на
-    json_object (схема описана в системном промпте).
+    """Один вызов модели. Сначала json_object, при ошибке — без формата
+    (модель получает JSON-схему в промпте). Ошибки не валят пайплайн.
     """
-    schema_fmt = {
-        "type": "json_schema",
-        "json_schema": {"name": "price_rows", "strict": True, "schema": _SCHEMA},
-    }
-    for response_format in (schema_fmt, {"type": "json_object"}):
+    for response_format in ({"type": "json_object"}, None):
         try:
             resp = _create(messages, response_format)
             content = resp.choices[0].message.content or "{}"
+            # Извлечь JSON из ответа (модель может обернуть в ```json ... ```)
+            content = content.strip()
+            if content.startswith("```"):
+                # Убираем маркдаун-обёртку
+                lines = content.split("\n")
+                lines = [l for l in lines if not l.strip().startswith("```")]
+                content = "\n".join(lines)
             payload = json.loads(content)
             rows = _rows_from_payload(payload)
-            return rows, [f"LLM ({settings.openai_model}) извлёк позиций: {len(rows)}"]
+            return rows, [f"LLM ({settings.llm_model}) извлёк позиций: {len(rows)}"]
         except Exception as exc:  # noqa: BLE001
             last = exc
     return [], [f"LLM-извлечение не удалось: {last}"]

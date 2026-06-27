@@ -28,10 +28,10 @@ dependencies = [
     "numpy>=1.26",
     # pgvector: хранение векторов справочника в Postgres + поиск оператором <=>
     "pgvector>=0.3",
-    # LLM-извлечение (fallback + vision-OCR)
+    # LLM-извлечение (fallback + vision-OCR) через HF Inference Providers.
+    # openai SDK используется как OpenAI-совместимый клиент с кастомным base_url.
     "openai>=1.40",
-    # HTTP-клиент (vision-OCR через OpenAI уже тянет его транзитивно; нужен также
-    # для удалённого docling-serve)
+    # HTTP-клиент (нужен для удалённого docling-serve и HF Inference Providers)
     "httpx>=0.27",
 ]
 

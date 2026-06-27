@@ -23,8 +23,8 @@ services:
       # Эмбеддинги (torch ~ГБ) выключаем в проде — fuzzy-матч остаётся, памяти/образа меньше.
       - key: MEDARCHIVE_USE_EMBEDDINGS
         value: "false"
-      # Ключ OpenAI для LLM-fallback/vision-OCR (необязательно). Задать в дашборде.
-      - key: MEDARCHIVE_OPENAI_API_KEY
+      # HF токен для LLM-fallback/vision-OCR (необязательно). Задать в дашборде.
+      - key: MEDARCHIVE_HF_API_KEY
         sync: false
 
   # --- Frontend (Vite build → nginx) ---

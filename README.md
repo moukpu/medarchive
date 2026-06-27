@@ -59,7 +59,7 @@ uvicorn app.main:app --reload
    Postgres + `medarchive-api` + `medarchive-web`).
 3. После первого деплоя задать у `medarchive-web` переменную `VITE_API_URL` =
    публичный URL API (например `https://medarchive-api.onrender.com`) и пересобрать
-   фронт. У `medarchive-api` опционально задать `MEDARCHIVE_OPENAI_API_KEY`.
+   фронт. У `medarchive-api` опционально задать `MEDARCHIVE_HF_API_KEY` (HF токен).
 4. Справочник услуг засевается автоматически при пустой БД
    (`MEDARCHIVE_SEED_CATALOG_PATH`, по умолчанию `data/samples/catalog.json`).
    Свой каталог — `python -m app.cli load-catalog <path>` через Shell сервиса.

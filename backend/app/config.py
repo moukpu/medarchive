@@ -53,11 +53,13 @@ class Settings(BaseSettings):
     # чем 200; выше — больше токенов/времени. Tesseract-fallback всегда 300 DPI.
     vision_ocr_dpi: int = 220
 
-    # LLM-извлечение (OpenAI). Используется как fallback, когда детерминированный
-    # парсер дал мало строк, и как vision-OCR для скан-PDF. Без ключа — тихо
-    # деградирует к Tesseract/regex (пайплайн остаётся рабочим).
-    openai_api_key: str | None = None  # MEDARCHIVE_OPENAI_API_KEY или OPENAI_API_KEY
-    openai_model: str = "gpt-5.4-mini"
+    # LLM-извлечение (Hugging Face Inference Providers, OpenAI-совместимый API).
+    # Используется как fallback, когда детерминированный парсер дал мало строк,
+    # и как vision-OCR для скан-PDF. Без ключа — тихо деградирует к
+    # Tesseract/regex (пайплайн остаётся рабочим).
+    hf_api_key: str | None = None      # MEDARCHIVE_HF_API_KEY или HF_TOKEN
+    llm_base_url: str = "https://router.huggingface.co/v1"  # OpenAI-compat endpoint
+    llm_model: str = "meta-llama/llama-4-scout"  # бесплатная VLM с vision на HF
     use_llm_extraction: bool = True
     llm_min_rows: int = 1     # если детерминированный парсер дал < N строк → пробуем LLM
     llm_max_pages: int = 10   # лимит страниц для vision-OCR (контроль стоимости)

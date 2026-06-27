@@ -68,7 +68,7 @@ class PdfScanExtractor:
     def extract(self, path: str) -> ExtractResult:
         result = ExtractResult()
 
-        # 1. Vision-OCR (OpenAI) как основной путь для сканов — распознаёт таблицу
+        # 1. Vision-OCR (HF Inference) как основной путь для сканов — распознаёт таблицу
         #    напрямую с изображения, надёжнее чем Tesseract+regex на плохих сканах.
         from app.extractors.llm import (
             llm_available,
