@@ -1,0 +1,41 @@
+# Render Blueprint — деплой MedArchive (Postgres + API + фронт) одной кнопкой.
+# Render → New → Blueprint → указать этот репозиторий.
+databases:
+  - name: medarchive-db
+    databaseName: medarchive
+    user: medarchive
+    plan: free
+
+services:
+  # --- Backend (FastAPI) ---
+  - type: web
+    name: medarchive-api
+    runtime: docker
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: MEDARCHIVE_DATABASE_URL
+        fromDatabase:
+          name: medarchive-db
+          property: connectionString
+      # Эмбеддинги (torch ~ГБ) выключаем в проде — fuzzy-матч остаётся, памяти/образа меньше.
+      - key: MEDARCHIVE_USE_EMBEDDINGS
+        value: "false"
+      # Ключ OpenAI для LLM-fallback/vision-OCR (необязательно). Задать в дашборде.
+      - key: MEDARCHIVE_OPENAI_API_KEY
+        sync: false
+
+  # --- Frontend (Vite build → nginx) ---
+  - type: web
+    name: medarchive-web
+    runtime: docker
+    dockerfilePath: frontend/Dockerfile
+    dockerContext: frontend
+    plan: free
+    envVars:
+      # Публичный URL API. После первого деплоя вставить https://medarchive-api.onrender.com
+      # (Render прокидывает env как build-arg → Vite инлайнит его в бандл).
+      - key: VITE_API_URL
+        sync: false

@@ -1,0 +1,34 @@
+Metadata-Version: 2.4
+Name: medarchive
+Version: 0.1.0
+Summary: MedArchive — обработка архива прайс-листов клиник-партнёров (Кейс 2, MedPartners)
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.110
+Requires-Dist: uvicorn[standard]>=0.29
+Requires-Dist: sqlalchemy[asyncio]>=2.0
+Requires-Dist: asyncpg>=0.29
+Requires-Dist: alembic>=1.13
+Requires-Dist: pydantic>=2.6
+Requires-Dist: pydantic-settings>=2.2
+Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: typer>=0.12
+Requires-Dist: pdfplumber>=0.11
+Requires-Dist: pymupdf>=1.24
+Requires-Dist: python-docx>=1.1
+Requires-Dist: openpyxl>=3.1
+Requires-Dist: xlrd>=2.0
+Requires-Dist: pdf2image>=1.17
+Requires-Dist: pytesseract>=0.3.10
+Requires-Dist: pillow>=10.2
+Requires-Dist: rapidfuzz>=3.6
+Requires-Dist: sentence-transformers>=2.6
+Requires-Dist: numpy>=1.26
+Requires-Dist: openai>=1.40
+Requires-Dist: httpx>=0.27
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
+Requires-Dist: httpx>=0.27; extra == "dev"
+Requires-Dist: aiosqlite>=0.20; extra == "dev"
+Provides-Extra: docling
+Requires-Dist: docling>=2.107; extra == "docling"

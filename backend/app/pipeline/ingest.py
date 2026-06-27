@@ -1,0 +1,101 @@
+"""Приём ZIP-архива: распаковка, дедуп партнёров, создание PriceDocument."""
+from __future__ import annotations
+
+import re
+import shutil
+import uuid
+import zipfile
+from datetime import date
+from pathlib import Path
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.extractors.router import detect_format
+from app.models import Partner, PriceDocument
+
+_DATE_RE = re.compile(r"(\d{4})[-_.](\d{2})[-_.](\d{2})|(\d{2})[-_.](\d{2})[-_.](\d{4})")
+_SUPPORTED = (".pdf", ".docx", ".xlsx", ".xls")
+
+
+def parse_filename(name: str) -> tuple[str, date | None]:
+    """Эвристика: вытащить дату и название клиники из имени файла."""
+    stem = Path(name).stem
+    eff: date | None = None
+    m = _DATE_RE.search(stem)
+    if m:
+        try:
+            if m.group(1):
+                eff = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            else:
+                eff = date(int(m.group(6)), int(m.group(5)), int(m.group(4)))
+        except ValueError:
+            eff = None
+    clinic = _DATE_RE.sub("", stem)
+    clinic = re.sub(r"[_\-]+", " ", clinic).strip(" .-_")
+    return (clinic or stem), eff
+
+
+async def get_or_create_partner(session: AsyncSession, name: str) -> Partner:
+    """Дедуп по нормализованному имени (BIN приходит позже из контента)."""
+    norm = re.sub(r"\s+", " ", name.strip().lower())
+    res = await session.execute(select(Partner))
+    for p in res.scalars():
+        if re.sub(r"\s+", " ", p.name.strip().lower()) == norm:
+            return p
+    partner = Partner(name=name)
+    session.add(partner)
+    await session.flush()
+    return partner
+
+
+async def ingest_zip(session: AsyncSession, zip_path: str) -> list[str]:
+    """Распаковать архив, создать документы в статусе pending. Вернуть doc_ids."""
+    batch_id = str(uuid.uuid4())
+    batch_dir = settings.uploads_dir / batch_id
+    batch_dir.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(batch_dir)
+
+    doc_ids: list[str] = []
+    for file in sorted(batch_dir.rglob("*")):
+        if not file.is_file() or file.suffix.lower() not in _SUPPORTED:
+            continue
+        clinic, eff = parse_filename(file.name)
+        partner = await get_or_create_partner(session, clinic)
+        fmt = detect_format(str(file))
+        doc = PriceDocument(
+            partner_id=partner.partner_id,
+            file_name=file.name,
+            file_path=str(file),
+            file_format=fmt,
+            effective_date=eff,
+        )
+        session.add(doc)
+        await session.flush()
+        doc_ids.append(doc.doc_id)
+    await session.commit()
+    return doc_ids
+
+
+async def ingest_single_file(session: AsyncSession, src_path: str) -> str:
+    """Принять один файл (без ZIP). Возвращает doc_id."""
+    batch_dir = settings.uploads_dir / str(uuid.uuid4())
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    dest = batch_dir / Path(src_path).name
+    shutil.copy2(src_path, dest)
+    clinic, eff = parse_filename(dest.name)
+    partner = await get_or_create_partner(session, clinic)
+    doc = PriceDocument(
+        partner_id=partner.partner_id,
+        file_name=dest.name,
+        file_path=str(dest),
+        file_format=detect_format(str(dest)),
+        effective_date=eff,
+    )
+    session.add(doc)
+    await session.flush()
+    await session.commit()
+    return doc.doc_id
