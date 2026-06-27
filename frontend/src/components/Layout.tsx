@@ -75,45 +75,51 @@ export function Layout({ tab, onTabChange, children }: { tab: Tab; onTabChange: 
                     setMobileOpen(false);
                   }}
                   aria-current={isActive ? "page" : undefined}
-                  className={`group relative flex w-full cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
-                    isActive ? "text-primary-200" : "text-ink-muted hover:bg-white/5 hover:text-ink"
+                  className={`group relative flex w-full cursor-pointer items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
+                    isActive ? "text-primary-200" : "text-ink-muted hover:bg-white/[0.05] hover:text-ink"
                   }`}
                 >
                   {isActive && (
-                    <span className="animate-fade-in absolute inset-0 rounded-lg bg-primary-500/15 ring-1 ring-inset ring-primary-500/30" aria-hidden="true" />
+                    <span className="animate-fade-in absolute inset-0 rounded-xl bg-gradient-to-r from-primary-500/20 to-primary-500/5 ring-1 ring-inset ring-primary-500/25" aria-hidden="true" />
                   )}
                   {isActive && (
                     <span
-                      className="animate-fade-in absolute inset-y-1.5 left-0 w-1 rounded-full bg-primary-400 shadow-[0_0_12px_2px_rgb(124_92_255_/_0.6)]"
+                      className="animate-fade-in absolute inset-y-2 left-0 w-[3px] rounded-full bg-primary-400 shadow-[0_0_10px_2px_rgb(124_92_255_/_0.55)]"
                       aria-hidden="true"
                     />
                   )}
                   <Icon
-                    size={20}
+                    size={19}
                     weight={isActive ? "fill" : "regular"}
-                    className={`relative z-10 transition-transform duration-200 group-hover:scale-110 ${
+                    className={`relative z-10 shrink-0 transition-transform duration-200 group-hover:scale-110 ${
                       isActive ? "text-primary-300" : "text-ink-faint group-hover:text-ink-muted"
                     }`}
                   />
-                  <span className="relative z-10">{item.label}</span>
+                  <div className="relative z-10 min-w-0">
+                    <p className="leading-tight">{item.label}</p>
+                    {isActive && <p className="mt-0.5 text-[11px] font-normal leading-tight text-primary-400/70">{item.description}</p>}
+                  </div>
                 </button>
               );
             })}
           </nav>
 
-          <div className="mt-auto rounded-lg border border-white/5 bg-white/[0.03] px-3 py-3 text-xs text-ink-muted">
+          <div className="mt-auto rounded-xl border border-white/[0.06] bg-white/[0.03] px-3.5 py-3.5 text-xs text-ink-muted ring-1 ring-inset ring-white/[0.04]">
             <p className="font-semibold text-ink">MedPartners · Кейс 2</p>
-            <p className="mt-0.5">Автоматическая обработка архива прайс-листов клиник</p>
+            <p className="mt-1 leading-relaxed">Автоматическая обработка архива прайс-листов клиник</p>
           </div>
         </div>
       </aside>
 
       {/* Main content */}
       <div className="relative z-10 flex-1">
-        <header className="glass-panel relative z-20 hidden rounded-none border-0 border-b px-8 py-5 lg:block">
+        <header className="glass-panel relative z-20 hidden rounded-none border-0 border-b px-8 py-4 lg:flex lg:items-center lg:gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-500/15 text-primary-400 ring-1 ring-primary-500/20">
+            {(() => { const Icon = active.icon; return <Icon size={16} weight="fill" />; })()}
+          </div>
           <div className="relative z-10">
-            <p className="text-xs font-medium uppercase tracking-wide text-ink-faint">{active.label}</p>
-            <p className="text-sm text-ink-muted">{active.description}</p>
+            <p className="text-sm font-semibold text-ink">{active.label}</p>
+            <p className="text-xs text-ink-faint">{active.description}</p>
           </div>
         </header>
         <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">

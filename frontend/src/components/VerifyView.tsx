@@ -136,7 +136,7 @@ function ReviewCard({ item, onResolved }: { item: ReviewItem; onResolved: (id: s
                 key={s.service_id}
                 onClick={() => quickMatch(s)}
                 disabled={busy}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-primary-200 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-700 transition-colors duration-150 hover:bg-primary-100 disabled:cursor-wait disabled:opacity-60"
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-primary-500/25 bg-primary-500/10 px-3 py-1.5 text-sm font-medium text-primary-300 transition-colors duration-150 hover:bg-primary-500/20 hover:text-primary-200 disabled:cursor-wait disabled:opacity-60"
               >
                 <CheckCircle size={15} weight="fill" /> {s.service_name}
               </button>

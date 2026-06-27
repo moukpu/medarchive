@@ -52,7 +52,7 @@ function StatCard({ icon, label, value, tone = "default" }: { icon: React.ReactN
     <MagicCard className="flex flex-col items-start gap-4 p-6 glass-panel hover-lift shadow-card" gradientColor={tone === "accent" ? "rgba(6, 182, 212, 0.15)" : "rgba(255, 255, 255, 0.03)"}>
       <div
         className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-sm ${
-          tone === "accent" ? "bg-primary-50 text-primary-600 shadow-primary-500/10" : "bg-canvas text-ink-muted border border-line"
+          tone === "accent" ? "bg-primary-500/15 text-primary-400 ring-1 ring-primary-500/25" : "bg-canvas text-ink-muted border border-line"
         }`}
       >
         {icon}
@@ -171,7 +171,7 @@ export function DashboardView() {
               }
             }}
             disabled={uploading}
-            className="flex items-center gap-2 rounded-xl bg-danger-50 px-4 py-2 text-sm font-medium text-danger-600 border border-danger-500/20 hover:bg-danger-100 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 rounded-xl bg-danger-50 px-4 py-2 text-sm font-medium text-danger-500 border border-danger-500/25 hover:bg-danger-500/20 transition-colors disabled:opacity-50"
           >
             <Trash size={18} />
             Очистить БД
@@ -228,7 +228,7 @@ export function DashboardView() {
                 </ShimmerButton>
                 
                 {msg && (
-                  <p className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-full mt-4 ${error ? "bg-danger-50 text-danger-600 border border-danger-500/20" : "bg-primary-50 text-primary-700 border border-primary-500/20"}`}>
+                  <p className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-full mt-4 ${error ? "bg-danger-50 text-danger-500 border border-danger-500/25" : "bg-primary-500/15 text-primary-300 border border-primary-500/25"}`}>
                     {error ? <WarningCircle size={16} /> : <CheckCircle size={16} weight="fill" />} {msg}
                   </p>
                 )}

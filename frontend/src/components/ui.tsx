@@ -81,11 +81,15 @@ export function Badge({
 
 export function EmptyState({ icon, title, description, action }: { icon?: ReactNode; title: string; description?: string; action?: ReactNode }) {
   return (
-    <div className="animate-fade-in-up flex flex-col items-center justify-center rounded-xl border border-dashed border-line-strong bg-surface px-6 py-14 text-center">
-      {icon && <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary-500/15 text-primary-300">{icon}</div>}
+    <div className="animate-fade-in-up flex flex-col items-center justify-center rounded-xl border border-dashed border-line-strong bg-surface/50 px-6 py-16 text-center">
+      {icon && (
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500/20 to-accent-500/10 text-primary-300 ring-1 ring-white/10 shadow-[0_0_24px_0_rgb(124_92_255_/_0.15)]">
+          {icon}
+        </div>
+      )}
       <p className="text-sm font-semibold text-ink">{title}</p>
-      {description && <p className="mt-1 max-w-sm text-sm text-ink-muted">{description}</p>}
-      {action && <div className="mt-4">{action}</div>}
+      {description && <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-ink-muted">{description}</p>}
+      {action && <div className="mt-5">{action}</div>}
     </div>
   );
 }
@@ -118,12 +122,13 @@ export function LoadingBlock({ label = "Загрузка…" }: { label?: string
 
 export function SkeletonRow() {
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-line bg-surface p-4">
-      <div className="skeleton-shimmer h-10 w-10 shrink-0 rounded-full" />
-      <div className="flex-1 space-y-2">
-        <div className="skeleton-shimmer h-3 w-1/3 rounded" />
-        <div className="skeleton-shimmer h-3 w-1/5 rounded" />
+    <div className="flex items-center gap-4 rounded-xl border border-line bg-surface/60 p-4">
+      <div className="skeleton-shimmer h-10 w-10 shrink-0 rounded-xl" />
+      <div className="flex-1 space-y-2.5">
+        <div className="skeleton-shimmer h-3 w-2/5 rounded-md" />
+        <div className="skeleton-shimmer h-3 w-1/4 rounded-md" />
       </div>
+      <div className="skeleton-shimmer h-6 w-16 shrink-0 rounded-full" />
     </div>
   );
 }
@@ -134,10 +139,10 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
 
 export function PageHeader({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-ink">{title}</h1>
-        {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
+        {description && <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">{description}</p>}
       </div>
       {action}
     </div>

@@ -124,7 +124,7 @@ export function PartnersView() {
 
         <Card className="mb-6">
           <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary-500/15 text-primary-400 ring-1 ring-primary-500/20">
               <Buildings size={22} />
             </div>
             <div className="flex-1">
@@ -188,9 +188,9 @@ export function PartnersView() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {partners.map((p) => (
-            <Card key={p.partner_id} padded={false} className="cursor-pointer p-4 hover:border-primary-200">
+            <Card key={p.partner_id} padded={false} className="cursor-pointer p-4 hover:border-primary-500/40 hover:bg-white/[0.02]">
               <button onClick={() => open(p)} className="flex w-full cursor-pointer items-start gap-3 text-left">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-500/15 text-primary-400 ring-1 ring-primary-500/20">
                   <Buildings size={18} />
                 </div>
                 <div className="min-w-0 flex-1">
