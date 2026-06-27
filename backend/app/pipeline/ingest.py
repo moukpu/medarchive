@@ -51,7 +51,12 @@ async def get_or_create_partner(session: AsyncSession, name: str) -> Partner:
 
 
 async def ingest_zip(session: AsyncSession, zip_path: str) -> list[str]:
-    """Распаковать архив, создать документы в статусе pending. Вернуть doc_ids."""
+    """Распаковать архив, загрузить файлы в S3, создать документы в БД. Вернуть doc_ids."""
+    from app.storage import upload_file_to_s3, init_bucket
+    import aiofiles
+    from fastapi import UploadFile
+
+    await init_bucket()
     batch_id = str(uuid.uuid4())
     batch_dir = settings.uploads_dir / batch_id
     batch_dir.mkdir(parents=True, exist_ok=True)
@@ -63,20 +68,31 @@ async def ingest_zip(session: AsyncSession, zip_path: str) -> list[str]:
     for file in sorted(batch_dir.rglob("*")):
         if not file.is_file() or file.suffix.lower() not in _SUPPORTED:
             continue
+            
         clinic, eff = parse_filename(file.name)
         partner = await get_or_create_partner(session, clinic)
         fmt = detect_format(str(file))
+        
+        # Upload to S3
+        object_name = f"{batch_id}/{file.name}"
+        with open(file, "rb") as f:
+            upload_file = UploadFile(file=f, filename=file.name)
+            s3_uri = await upload_file_to_s3(upload_file, object_name)
+
         doc = PriceDocument(
             partner_id=partner.partner_id,
             file_name=file.name,
-            file_path=str(file),
+            file_path=s3_uri,
             file_format=fmt,
             effective_date=eff,
         )
         session.add(doc)
         await session.flush()
         doc_ids.append(doc.doc_id)
+        
     await session.commit()
+    # Cleanup local extracted batch
+    shutil.rmtree(batch_dir, ignore_errors=True)
     return doc_ids
 
 

@@ -15,19 +15,74 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build: ./backend
     environment:
       MEDARCHIVE_DATABASE_URL: postgresql+asyncpg://medarchive:medarchive@db:5432/medarchive
+      MEDARCHIVE_REDIS_URL: redis://redis:6379/0
+      MEDARCHIVE_S3_ENDPOINT: http://minio:9000
+      MEDARCHIVE_S3_ACCESS_KEY: minioadmin
+      MEDARCHIVE_S3_SECRET_KEY: minioadmin
+      MEDARCHIVE_S3_BUCKET: medarchive-uploads
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - uploads:/app/data/uploads
     depends_on:
       db:
         condition: service_healthy
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    build: ./backend
+    environment:
+      MEDARCHIVE_DATABASE_URL: postgresql+asyncpg://medarchive:medarchive@db:5432/medarchive
+      MEDARCHIVE_REDIS_URL: redis://redis:6379/0
+      MEDARCHIVE_S3_ENDPOINT: http://minio:9000
+      MEDARCHIVE_S3_ACCESS_KEY: minioadmin
+      MEDARCHIVE_S3_SECRET_KEY: minioadmin
+      MEDARCHIVE_S3_BUCKET: medarchive-uploads
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: arq app.worker.WorkerSettings
 
   frontend:
     build: ./frontend
@@ -41,4 +96,4 @@ services:
 
 volumes:
   pgdata:
-  uploads:
+  minio_data:

@@ -34,7 +34,6 @@ async def _seed_catalog_if_empty() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
-    await init_models()  # для dev/демо; в проде схему ведёт Alembic
     await _seed_catalog_if_empty()
     yield
 

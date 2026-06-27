@@ -23,19 +23,28 @@ async def _process_all() -> None:
         await process_pending(session)
 
 
+from arq import create_pool
+from arq.connections import RedisSettings
+from app.config import settings
+
 @router.post("/upload")
 async def upload_archive(
-    background: BackgroundTasks,
     file: UploadFile,
     session: AsyncSession = Depends(get_session),
 ):
-    """Принять ZIP-архив, поставить документы в очередь, запустить обработку в фоне."""
+    """Принять ZIP-архив, сохранить файлы в S3, закинуть ID в Redis/Arq очередь."""
     suffix = Path(file.filename or "archive.zip").suffix or ".zip"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(await file.read())
         tmp_path = tmp.name
+        
     doc_ids = await ingest_zip(session, tmp_path)
-    background.add_task(_process_all)
+    
+    # Enqueue tasks in Arq Redis queue
+    redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    for doc_id in doc_ids:
+        await redis.enqueue_job("arq_process_document", doc_id)
+        
     return {"queued_documents": len(doc_ids), "doc_ids": doc_ids}
 
 
@@ -70,9 +79,15 @@ async def documents_status(session: AsyncSession = Depends(get_session)):
 
 
 @router.post("/process")
-async def trigger_processing(background: BackgroundTasks):
+async def trigger_processing():
     """Запустить обработку pending-документов вручную."""
-    background.add_task(_process_all)
+    redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    async with SessionLocal() as session:
+        res = await session.execute(
+            select(PriceDocument.doc_id).where(PriceDocument.parse_status == ParseStatus.pending)
+        )
+        for doc_id in res.scalars():
+            await redis.enqueue_job("arq_process_document", doc_id)
     return {"status": "processing_started"}
 
 
@@ -104,24 +119,22 @@ async def rematch_all(background: BackgroundTasks):
 
 
 @router.post("/reprocess-errors")
-async def reprocess_errors(background: BackgroundTasks):
+async def reprocess_errors():
     """Сбросить error/processing документы в pending и запустить обработку."""
-    async def _reset_and_process():
-        from app.models import ParseStatus
-        async with SessionLocal() as session:
-            res = await session.execute(
-                select(PriceDocument).where(
-                    PriceDocument.parse_status.in_([ParseStatus.error, ParseStatus.processing])
-                )
+    from app.models import ParseStatus
+    redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    async with SessionLocal() as session:
+        res = await session.execute(
+            select(PriceDocument).where(
+                PriceDocument.parse_status.in_([ParseStatus.error, ParseStatus.processing])
             )
-            docs = res.scalars().all()
-            for doc in docs:
-                doc.parse_status = ParseStatus.pending
-                doc.parse_log = (doc.parse_log or "") + "\n[Сброшен в pending для повторной обработки]"
-            await session.commit()
-        async with SessionLocal() as session:
-            await process_pending(session)
-    background.add_task(_reset_and_process)
+        )
+        docs = res.scalars().all()
+        for doc in docs:
+            doc.parse_status = ParseStatus.pending
+            doc.parse_log = (doc.parse_log or "") + "\n[Сброшен в pending для повторной обработки]"
+            await redis.enqueue_job("arq_process_document", doc.doc_id)
+        await session.commit()
     return {"status": "reprocess_started"}
 
 

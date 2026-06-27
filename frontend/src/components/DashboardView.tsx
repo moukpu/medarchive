@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   UploadSimple,
   FileArchive,
@@ -59,43 +60,41 @@ function StatCard({ icon, label, value, tone = "default" }: { icon: React.ReactN
 }
 
 export function DashboardView() {
-  const [d, setD] = useState<Dashboard | null>(null);
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [batch, setBatch] = useState<DocumentStatus[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const pollRef = useRef<number | null>(null);
 
-  const load = () => api.dashboard().then(setD).catch(() => {});
-  useEffect(() => {
-    load();
-    return () => {
-      if (pollRef.current) window.clearInterval(pollRef.current);
-    };
-  }, []);
+  const { data: d, isLoading, error: loadError, refetch: load } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: () => api.dashboard()
+  });
 
-  const startPolling = (docIds: string[]) => {
-    if (pollRef.current) window.clearInterval(pollRef.current);
-    const ids = new Set(docIds);
-    const tick = async () => {
-      try {
-        const all = await api.status();
-        const mine = all.filter((x) => ids.has(x.doc_id));
-        setBatch(mine);
-        if (mine.length === docIds.length && mine.every((x) => TERMINAL.has(x.parse_status))) {
-          if (pollRef.current) window.clearInterval(pollRef.current);
-          pollRef.current = null;
-          load();
-        }
-      } catch {
-        /* временная сетевая ошибка — продолжаем поллинг */
+  const { data: allStatuses } = useQuery({
+    queryKey: ['status'],
+    queryFn: () => api.status(),
+    refetchInterval: (query) => {
+      const statuses = query.state.data;
+      if (!statuses || !batch) return false;
+      const ids = new Set(batch.map(x => x.doc_id));
+      const mine = statuses.filter(x => ids.has(x.doc_id));
+      if (mine.length === batch.length && mine.every(x => TERMINAL.has(x.parse_status))) {
+        load();
+        return false;
       }
-    };
-    tick();
-    pollRef.current = window.setInterval(tick, 1500);
-  };
+      return 1500;
+    },
+    enabled: !!batch && batch.some(x => !TERMINAL.has(x.parse_status))
+  });
+
+  useEffect(() => {
+    if (allStatuses && batch) {
+      const ids = new Set(batch.map(x => x.doc_id));
+      setBatch(allStatuses.filter(x => ids.has(x.doc_id)));
+    }
+  }, [allStatuses]);
 
   const upload = async (f: File | undefined) => {
     if (!f) return;
@@ -107,8 +106,11 @@ export function DashboardView() {
       const r: any = await api.uploadArchive(f);
       const docIds: string[] = r.doc_ids ?? [];
       setMsg(`Поставлено документов в обработку: ${r.queued_documents ?? docIds.length}.`);
-      if (docIds.length) startPolling(docIds);
-      else load();
+      if (docIds.length) {
+        setBatch(docIds.map(id => ({ doc_id: id, file_name: "Загрузка...", parse_status: "pending", parsed_at: "" })));
+      } else {
+        load();
+      }
     } catch {
       setError(true);
       setMsg("Не удалось загрузить архив. Проверьте формат файла (.zip) и попробуйте снова.");

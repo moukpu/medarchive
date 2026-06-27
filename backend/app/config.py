@@ -77,13 +77,22 @@ class Settings(BaseSettings):
     # Авто-сид справочника при пустой БД (для свежего деплоя). Пустая строка → не сидить.
     seed_catalog_path: str = str(BASE_DIR / "data" / "samples" / "catalog.json")
 
-    # Docling-фоллбэк для PDF (ML-структура таблиц). Пробуется перед LLM, если
-    # детерминированный парсер дал мусор. serve_url задан → удалённый GPU-путь
-    # (docling-serve/RunPod), иначе локальный пакет (тяжёлый, CPU-медленный).
     use_docling: bool = True
     docling_serve_url: str | None = None   # MEDARCHIVE_DOCLING_SERVE_URL; пусто → локальный путь
     docling_max_pages: int = 12            # жёсткий лимит страниц для ЛОКАЛЬНОГО CPU-прогона
     docling_timeout_seconds: int = 120     # таймаут HTTP-вызова docling-serve
+
+    # Redis (Arq)
+    redis_url: str = "redis://localhost:6379/0"
+
+    # S3 (MinIO)
+    s3_endpoint: str | None = None
+    s3_access_key: str | None = None
+    s3_secret_key: str | None = None
+    s3_bucket: str = "medarchive-uploads"
+
+    # External APIs
+    openai_api_key: str | None = None
 
     @property
     def uploads_dir(self) -> Path:
