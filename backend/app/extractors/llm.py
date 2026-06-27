@@ -77,11 +77,11 @@ _SCHEMA = {
 
 
 def _api_key() -> str | None:
-    return settings.hf_api_key or os.environ.get("HF_TOKEN")
+    return settings.hf_api_key or settings.openai_api_key or os.environ.get("HF_TOKEN")
 
 
 def llm_available() -> bool:
-    """LLM-извлечение включено и есть HF-токен + установлен пакет openai."""
+    """LLM-извлечение включено и есть HF-токен или OpenAI-токен + установлен пакет openai."""
     if not settings.use_llm_extraction or not _api_key():
         return False
     try:
@@ -95,9 +95,14 @@ def llm_available() -> bool:
 def _client():
     from openai import OpenAI
 
+    key = _api_key()
+    base_url = settings.llm_base_url
+    if key and key.startswith("sk-"):
+        base_url = None
+
     return OpenAI(
-        api_key=_api_key(),
-        base_url=settings.llm_base_url,
+        api_key=key,
+        base_url=base_url,
     )
 
 
@@ -140,8 +145,10 @@ def _create(messages: list[dict], response_format: dict | None = None):
     большинства моделей. strict json_schema может не поддерживаться,
     поэтому используем json_object + схема в промпте.
     """
+    key = _api_key()
+    model = "gpt-4o-mini" if key and key.startswith("sk-") else settings.llm_model
     kwargs: dict = {
-        "model": settings.llm_model,
+        "model": model,
         "messages": messages,
         "max_tokens": 8192,
         "temperature": 0.1,
