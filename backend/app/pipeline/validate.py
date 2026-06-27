@@ -58,15 +58,20 @@ def validate_row(
     out.price_resident_kzt = res
     out.price_nonresident_kzt = nonres
 
-    # Цена > 0 и число. Цена ≤ 1 — мусор парсинга (заголовки секций и т.п.)
+    # Цена > 0 и число. Пороги реалистичности мед. цен:
+    #   < 100 ₸ — точно мусор (номер строки, код, заголовок секции) → skip
+    #   100–200 ₸ — подозрительно дёшево для мед. услуги → needs_review
     if res is None and nonres is None:
         out.needs_review = True
         out.warnings.append("Цена не распознана")
     else:
         for label, val in (("резидент", res), ("нерезидент", nonres)):
-            if val is not None and val <= 1:
+            if val is not None and val < 100:
                 out.skip = True
-                out.warnings.append(f"Мусорная цена ({label}): {val} — строка пропущена")
+                out.warnings.append(f"Мусорная цена ({label}): {val} — строка пропущена (< 100 ₸)")
+            elif val is not None and val < 200:
+                out.needs_review = True
+                out.warnings.append(f"Подозрительно низкая цена ({label}): {val} ₸ — требуется проверка")
 
     # Цена нерезидента >= цены резидента
     if res is not None and nonres is not None and nonres < res:

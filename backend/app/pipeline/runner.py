@@ -24,9 +24,9 @@ from app.pipeline.validate import validate_row
 def _looks_low_quality(rows) -> bool:
     """Эвристика «детерминированный результат — мусор» → стоит звать LLM.
 
-    Срабатывает при 0 строк или когда >30% строк подозрительны: цена ≤ 1
-    (заголовок раздела принят за цену), цена/валюта затекла в название, либо
-    название аномально длинное (слитые ячейки).
+    Срабатывает при 0 строк или когда >30% строк подозрительны: цена < 200
+    (номер строки/код принят за цену), цена/валюта затекла в название, либо
+    название аномально длинное (слитые ячейки), либо цена > 5 млн (код позиции).
     """
     n = len(rows)
     if n < settings.llm_min_rows:
@@ -35,9 +35,10 @@ def _looks_low_quality(rows) -> bool:
     for r in rows:
         name = (r.service_name_raw or "")
         low = name.lower()
+        # Цена < 200 ₸ — почти наверняка номер строки/код, не реальная цена
         bad_price = (
-            (r.price_resident is not None and r.price_resident <= 1)
-            and (r.price_nonresident is None or r.price_nonresident <= 1)
+            (r.price_resident is not None and r.price_resident < 200)
+            and (r.price_nonresident is None or r.price_nonresident < 200)
         )
         # нереально большая цена за услугу (> 5 млн ₸) — почти всегда в колонку
         # цены затёк код позиции

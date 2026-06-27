@@ -38,6 +38,9 @@ _RESIDENT_KW = ("резидент",)
 _NONRESIDENT_KW = ("нерезидент", "не резидент", "non-resident", "nonresident")
 _PRICE_KW = ("цена", "стоимост", "тариф", "price", "kzt", "тенге", "сум")
 _CODE_KW = ("код", "code", "артикул")
+# Ключевые слова колонки порядковых номеров — ЯВНО исключаем из кандидатов
+# на цену/услугу. Без этого колонка «№ п/п» ловит тысячи ложных «цен».
+_INDEX_KW = ("№", "п/п", "n/n", "номер", "#", "row", "item")
 
 
 def _norm_header(s: str) -> str:
@@ -53,20 +56,29 @@ def classify_columns(headers: list[str]) -> dict[str, int]:
     """
     mapping: dict[str, int] = {}
     code_cols: set[int] = set()
+    index_cols: set[int] = set()  # колонки-номера (№ п/п)
 
-    # 1. сначала коды
+    # 0. сначала колонки-нумерации (№ п/п, #)
     for idx, raw in enumerate(headers):
         h = _norm_header(raw)
-        if h and any(k in h for k in _CODE_KW):
+        if h and any(k in h for k in _INDEX_KW):
+            # «№ п/п» — точно не цена и не услуга
+            index_cols.add(idx)
+
+    # 1. затем коды
+    for idx, raw in enumerate(headers):
+        h = _norm_header(raw)
+        if h and idx not in index_cols and any(k in h for k in _CODE_KW):
             mapping.setdefault("code", idx)
             code_cols.add(idx)
 
-    # 2. цены и услуга. Колонку-код НЕ назначаем ни ценой, ни услугой: заголовок
-    # вроде «Код по тарифу» содержит и «код», и «тариф» — без этого исключения
-    # код-колонка получает роль цены, и parse_price дробит код в число-миллионник.
+    # 2. цены и услуга. Колонку-код и колонку-нумерацию НЕ назначаем ни ценой,
+    # ни услугой: заголовок вроде «Код по тарифу» содержит и «код», и «тариф» —
+    # без этого исключения код-колонка получает роль цены.
+    skip_cols = code_cols | index_cols
     for idx, raw in enumerate(headers):
         h = _norm_header(raw)
-        if not h or idx in code_cols:
+        if not h or idx in skip_cols:
             continue
         if any(k in h for k in _NONRESIDENT_KW):
             mapping.setdefault("price_nonresident", idx)
@@ -170,6 +182,11 @@ def parse_price(value) -> float | None:
 
 
 # --- Эвристика типов данных (когда шапки нет) -------------------------------
+
+# Минимальная правдоподобная цена за мед. услугу (KZT).
+# Реальные прайсы: даже самый дешёвый анализ стоит ≥ 200 ₸.
+# Ниже — почти наверняка номер строки / код / мусор парсинга.
+_MIN_PLAUSIBLE_PRICE = 200
 
 _NUM_CELL_RE = re.compile(r"^[\d\s.,]+$")
 _FRAGMENT_RE = re.compile(r"0{2,3}")        # «тысячный» обрывок ячейки: 00 / 000
@@ -283,12 +300,54 @@ def _read_price(cells: list[str], idx: int | None) -> float | None:
 # --- Поиск ценовой колонки по контенту (шапка-цена съехала / двухстрочная) ---
 
 def _looks_like_index(vals: list[float]) -> bool:
-    """Похоже на колонку «№ п/п»: подряд идущие целые 1,2,3,… — это не цена."""
+    """Колонка — порядковый номер (№ п/п), а не цена.
+
+    Расширенные проверки:
+    1. Строго последовательные (1,2,3...) → точно индекс.
+    2. Монотонно возрастающие целые с маленьким шагом (1,2,5,8,...) → индекс.
+    3. Все значения ≤ 500 и монотонно возрастают → индекс с пропусками.
+    4. Все значения — маленькие целые (< MIN_PLAUSIBLE_PRICE) → вряд ли цена.
+    """
     ints = [v for v in vals if v is not None and float(v).is_integer()]
     if len(ints) < 3:
         return False
-    seq = ints[:6]
-    return seq[0] in (0, 1) and all(b - a == 1 for a, b in zip(seq, seq[1:]))
+    seq = ints[:12]
+
+    # 1. Классика: строгая последовательность 1,2,3,...
+    if seq[0] in (0, 1) and all(b - a == 1 for a, b in zip(seq, seq[1:])):
+        return True
+
+    # 2. Монотонно возрастающие целые с маленьким шагом (≤5)
+    #    и стартуют от маленького числа — типично для «№ п/п» с пропусками
+    if seq[0] <= 10 and all(0 < b - a <= 5 for a, b in zip(seq, seq[1:])):
+        return True
+
+    # 3. Все целые, ≤ 500, и МОНОТОННО ВОЗРАСТАЮТ — индекс с большими пропусками
+    if (all(0 < v <= 500 for v in seq)
+            and all(b > a for a, b in zip(seq, seq[1:]))):
+        return True
+
+    # 4. Все значения < MIN_PLAUSIBLE_PRICE и все целые → вряд ли мед. цены
+    if all(0 < v < _MIN_PLAUSIBLE_PRICE for v in seq):
+        return True
+
+    return False
+
+
+def _looks_like_price_column(vals: list[float]) -> bool:
+    """Значения похожи на цены мед. услуг, а не на порядковые номера/коды.
+
+    Если > 50% значений < MIN_PLAUSIBLE_PRICE — это скорее номера/коды.
+    Также отсекаем колонки, где все значения — маленькие монотонные целые.
+    """
+    clean = [v for v in vals if v is not None and v > 0]
+    if len(clean) < 3:
+        return False
+    # Если > 50% значений < MIN_PLAUSIBLE_PRICE — не цены
+    low = sum(1 for v in clean if v < _MIN_PLAUSIBLE_PRICE)
+    if low / len(clean) > 0.5:
+        return False
+    return True
 
 
 def _infer_price_col(
@@ -298,7 +357,8 @@ def _infer_price_col(
 
     Берём числовую колонку (доля чисел ≥ 0.6), исключая `service`/`code` и
     колонку-нумерацию (№ п/п). Из кандидатов выбираем с наибольшей медианой
-    значения — цены крупнее порядкового номера/количества.
+    значения — цены крупнее порядкового номера/количества. Дополнительно
+    проверяем, что колонка-кандидат содержит правдоподобные цены (≥ 200 ₸).
     """
     stats: dict[int, list[float]] = {}
     counts: dict[int, int] = {}
@@ -325,6 +385,9 @@ def _infer_price_col(
         if not total or len(vals) / total < 0.6:
             continue
         if _looks_like_index(vals):
+            continue
+        # Новая проверка: колонка должна содержать правдоподобные цены
+        if not _looks_like_price_column(vals):
             continue
         median = sorted(vals)[len(vals) // 2]
         if median > best_median:
@@ -430,6 +493,60 @@ def _drop_nonnumeric_price_cols(cols: dict[str, int], data: list[list[str]]) -> 
 # Без отсева номер раздела утекает в цену (price=1.0), а текст — в колонку кода.
 _SECTION_RE = re.compile(r"^\s*(раздел|подраздел|глава|часть)\b", re.IGNORECASE)
 
+# Чисто цифровое значение (возможно с пробелами/точками) — НЕ название услуги.
+# Ловит: «2», «15.3», «1 234», «001.002.003» (коды), «123456».
+_PURE_NUMBER_RE = re.compile(r"^[\d\s.,\-/]+$")
+
+# Мусорные строки: метаданные документа, шапки, итоги, реквизиты — не услуги.
+# Матчим по НАЧАЛУ строки: если строка начинается с любого из паттернов — мусор.
+_METADATA_RE = re.compile(
+    r"^\s*("
+    r"итого|всего|итог|total|subtotal|подитог"
+    r"|примечан|прайс\s*-?\s*лист|price\s*-?\s*list"
+    r"|дата\b|date\b|тариф утв|утвержд"
+    r"|договор|контракт|реквизит|адрес\b|телефон|email|e-mail|www\."
+    r"|\*{2,}|скидк|акци"
+    r")",
+    re.IGNORECASE,
+)
+
+# Мед. код (A02.004.001, B03.015.002) — не название услуги, это код.
+_MED_CODE_RE = re.compile(r"^[A-Z]\d{2}\.\d{3}(\.\d{3})?$", re.IGNORECASE)
+
+
+def _is_garbage_service_name(name: str) -> bool:
+    """Проверить, что строка НЕ является реальным названием мед. услуги.
+
+    Отсекает:
+    - Чисто цифровые значения (номера строк, коды)
+    - Слишком короткие строки без букв
+    - Разделители секций
+    - Мед. коды (A02.004.001)
+    - Метаданные (итого, примечание, дата, адрес...)
+    """
+    s = (name or "").strip()
+    if not s:
+        return True
+    # Чистое число (порядковый номер, код)
+    if _PURE_NUMBER_RE.fullmatch(s):
+        return True
+    # Нет ни одной буквы
+    if not _LETTER_RE.search(s):
+        return True
+    # Мед. код (не название)
+    if _MED_CODE_RE.fullmatch(s):
+        return True
+    # Раздел/секция
+    if _SECTION_RE.match(s):
+        return True
+    # Метаданные (итого, примечание, прайс-лист...)
+    if _METADATA_RE.match(s):
+        return True
+    # Слишком короткая строка (1 символ) — не может быть названием
+    if len(s) < 2:
+        return True
+    return False
+
 
 def _build_rows(data: list[list[str]], cols: dict[str, int]) -> list[RawPriceRow]:
     service_col = cols.get("service")
@@ -439,7 +556,7 @@ def _build_rows(data: list[list[str]], cols: dict[str, int]) -> list[RawPriceRow
         if service_col is None or service_col >= len(cells):
             continue
         name = cells[service_col].strip()
-        if not name or _SECTION_RE.match(name):
+        if _is_garbage_service_name(name):
             continue
         pr = _read_price(cells, cols.get("price_resident"))
         pnr = _read_price(cells, cols.get("price_nonresident"))
@@ -458,6 +575,99 @@ def _build_rows(data: list[list[str]], cols: dict[str, int]) -> list[RawPriceRow
             service_code_source=code or None,
         ))
     return rows
+
+
+def _sanity_check_prices(
+    rows: list[RawPriceRow], warnings: list[str]
+) -> tuple[list[RawPriceRow], list[str]]:
+    """Многоуровневая пост-проверка результата парсинга.
+
+    Эшелоны защиты:
+    1. Массовые низкие цены (>60% < 200₸) → номера строк в цене
+    2. Последовательные цены (1,2,3... или монотонные) → индексы
+    3. Цены-клоны (>80% одинаковые) → неверная колонка
+    4. Слишком низкая дисперсия (std/mean < 0.1) → подозрительно
+    5. Мусорные service_name (>50% — числа/коды) → неверная колонка services
+    """
+    if not rows:
+        return rows, warnings
+    n = len(rows)
+
+    # --- Эшелон 1: массовые низкие цены ---
+    prices: list[float] = []
+    low = 0
+    for r in rows:
+        price = r.price_resident if r.price_resident is not None else r.price_nonresident
+        if price is not None:
+            prices.append(price)
+            if price < _MIN_PLAUSIBLE_PRICE:
+                low += 1
+    if prices and low / len(prices) > 0.6:
+        warnings.append(
+            f"Sanity check [низкие цены]: {low}/{len(prices)} ({low*100//len(prices)}%) "
+            f"цен < {_MIN_PLAUSIBLE_PRICE} ₸ → сброс для LLM-фоллбэка."
+        )
+        return [], warnings
+
+    # --- Эшелон 2: последовательные цены (монотонно возрастающие целые) ---
+    if len(prices) >= 5:
+        int_prices = [p for p in prices if float(p).is_integer() and p > 0]
+        if len(int_prices) >= 5:
+            sample = int_prices[:20]
+            # Строго последовательные (1,2,3,...)
+            if (sample[0] <= 5
+                    and all(b - a >= 0 and b - a <= 3 for a, b in zip(sample, sample[1:]))):
+                warnings.append(
+                    "Sanity check [последовательные]: цены выглядят как "
+                    f"порядковые номера ({sample[:5]}...) → сброс."
+                )
+                return [], warnings
+            # Монотонно возрастающие маленькие целые
+            if (all(0 < p < 500 for p in sample)
+                    and all(b >= a for a, b in zip(sample, sample[1:]))):
+                warnings.append(
+                    "Sanity check [монотонные]: цены монотонно возрастают в диапазоне "
+                    f"{min(sample):.0f}–{max(sample):.0f} → сброс."
+                )
+                return [], warnings
+
+    # --- Эшелон 3: цены-клоны (>80% одинаковые) ---
+    if len(prices) >= 5:
+        from collections import Counter
+        freq = Counter(prices)
+        most_common_count = freq.most_common(1)[0][1]
+        if most_common_count / len(prices) > 0.8:
+            warnings.append(
+                f"Sanity check [клоны]: {most_common_count}/{len(prices)} цен одинаковые "
+                f"({freq.most_common(1)[0][0]}) → сброс."
+            )
+            return [], warnings
+
+    # --- Эшелон 4: слишком низкая дисперсия ---
+    if len(prices) >= 10:
+        mean = sum(prices) / len(prices)
+        if mean > 0:
+            variance = sum((p - mean) ** 2 for p in prices) / len(prices)
+            std = variance ** 0.5
+            cv = std / mean  # коэффициент вариации
+            if cv < 0.05 and mean < _MIN_PLAUSIBLE_PRICE:
+                # Все цены кучкуются вокруг маленького значения
+                warnings.append(
+                    f"Sanity check [дисперсия]: mean={mean:.0f}, std={std:.1f}, "
+                    f"CV={cv:.2f} → все цены ≈{mean:.0f} ₸ → сброс."
+                )
+                return [], warnings
+
+    # --- Эшелон 5: мусорные названия услуг ---
+    garbage_names = sum(1 for r in rows if _is_garbage_service_name(r.service_name_raw))
+    if garbage_names / n > 0.5:
+        warnings.append(
+            f"Sanity check [названия]: {garbage_names}/{n} ({garbage_names*100//n}%) "
+            "названий — мусор (числа/коды/метаданные) → сброс."
+        )
+        return [], warnings
+
+    return rows, warnings
 
 
 def rows_from_matrix(matrix: list[list[str]]) -> tuple[list[RawPriceRow], list[str]]:
@@ -507,7 +717,8 @@ def rows_from_matrix(matrix: list[list[str]]) -> tuple[list[RawPriceRow], list[s
         warnings.append("Шапка не найдена — колонки определены эвристикой по типам данных")
         data = matrix
 
-    return _build_rows(data, cols), warnings
+    rows = _build_rows(data, cols)
+    return _sanity_check_prices(rows, warnings)
 
 
 # --- Парсинг плоского текста (OCR / неструктурированный PDF) -----------------
@@ -546,4 +757,4 @@ def rows_from_text(text: str) -> tuple[list[RawPriceRow], list[str]]:
             price_original=price,
             currency=detect_currency(line),
         ))
-    return rows, []
+    return _sanity_check_prices(rows, [])
