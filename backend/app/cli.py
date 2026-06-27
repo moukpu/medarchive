@@ -47,6 +47,23 @@ def ingest_zip(path: str, process: bool = typer.Option(True, help="Сразу о
     typer.echo(f"Поставлено документов: {len(doc_ids)}")
 
 
+@app.command("sync-vectors")
+def sync_vectors(force: bool = typer.Option(False, help="Пересчитать все вектора, а не только пустые")):
+    """Посчитать pgvector-эмбеддинги справочника (через GPU-сервис или локальную модель)."""
+    async def _run():
+        from app.matching import pgvector_match as pgv
+
+        await init_models()
+        async with SessionLocal() as s:
+            if not pgv.is_postgres(s):
+                typer.echo("Не Postgres — pgvector недоступен (матчинг идёт in-memory).")
+                return 0
+            return await pgv.sync_catalog_vectors(s, force=force)
+
+    n = asyncio.run(_run())
+    typer.echo(f"Векторов обновлено: {n}")
+
+
 @app.command()
 def process():
     """Обработать все pending-документы."""

@@ -37,6 +37,15 @@ class Settings(BaseSettings):
     # номенклатуре. Тяжелее (~2 ГБ); для быстрого старта без модели — use_embeddings=false.
     embedding_model: str = "deepvk/USER-bge-m3"
     use_embeddings: bool = True  # можно отключить для быстрого старта без модели
+    embedding_dim: int = 1024    # размерность векторов модели (bge-m3 = 1024); колонка pgvector
+
+    # Удалённый GPU-сервис эмбеддингов (HF text-embeddings-inference / RunPod).
+    # serve_url задан → вектора считает GPU (POST {url}/embed, контракт TEI),
+    # модель НЕ грузится в веб-контейнер. Пусто → локальный SentenceTransformer.
+    embed_serve_url: str | None = None     # MEDARCHIVE_EMBED_SERVE_URL
+    embed_api_key: str | None = None       # Bearer для защищённого эндпоинта
+    embed_batch_size: int = 64             # размер батча на один HTTP-вызов
+    embed_timeout_seconds: int = 60        # таймаут вызова GPU-сервиса
 
     # OCR
     tesseract_lang: str = "rus+kaz+eng"

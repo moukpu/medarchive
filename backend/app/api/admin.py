@@ -64,6 +64,7 @@ async def rematch_all(background: BackgroundTasks):
                 select(PriceItem).where(PriceItem.is_active.is_(True))
             )
             items = res.scalars().all()
+            await index.prepare(session, [item.service_name_raw or "" for item in items])
             updated = 0
             for item in items:
                 match = index.match(item.service_name_raw or "")

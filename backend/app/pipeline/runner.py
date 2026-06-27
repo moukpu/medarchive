@@ -125,6 +125,9 @@ async def process_document(session: AsyncSession, doc_id: str, index: CatalogInd
         if index is None:
             index = await CatalogIndex.build(session)
 
+        # Embedding-тир — одним батчем на все имена документа (минимум вызовов GPU).
+        await index.prepare(session, [r.service_name_raw for r in result.rows])
+
         needs_review_doc = False
         for row in result.rows:
             prev = await _prev_resident(session, doc.partner_id, row.service_name_raw)

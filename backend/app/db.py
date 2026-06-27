@@ -28,4 +28,18 @@ async def init_models() -> None:
     from app import models  # noqa: F401  (регистрация моделей)
 
     async with engine.begin() as conn:
+        # pgvector: расширение должно существовать ДО create_all, иначе колонка
+        # Service.embedding (тип vector) не создастся («type vector does not exist»).
+        if conn.dialect.name == "postgresql":
+            from sqlalchemy import text
+
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+        # На уже развёрнутой БД create_all не добавляет новые колонки к
+        # существующим таблицам — докидываем Service.embedding идемпотентно.
+        if conn.dialect.name == "postgresql":
+            from sqlalchemy import text
+
+            await conn.execute(text(
+                f"ALTER TABLE services ADD COLUMN IF NOT EXISTS embedding vector({settings.embedding_dim})"
+            ))

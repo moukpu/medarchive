@@ -26,6 +26,8 @@ dependencies = [
     "rapidfuzz>=3.6",
     "sentence-transformers>=2.6",
     "numpy>=1.26",
+    # pgvector: хранение векторов справочника в Postgres + поиск оператором <=>
+    "pgvector>=0.3",
     # LLM-извлечение (fallback + vision-OCR)
     "openai>=1.40",
     # HTTP-клиент (vision-OCR через OpenAI уже тянет его транзитивно; нужен также

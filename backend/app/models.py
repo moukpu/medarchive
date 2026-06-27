@@ -19,7 +19,18 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.config import settings
 from app.db import Base
+
+# pgvector опционален: на Postgres колонка Service.embedding — нативный vector
+# (поиск через оператор `<=>`), на SQLite (тесты) / без установленного пакета
+# деградирует до JSON, чтобы create_all и импорт моделей не падали.
+try:
+    from pgvector.sqlalchemy import Vector
+
+    _EmbeddingType = Vector(settings.embedding_dim).with_variant(JSON(), "sqlite")
+except Exception:  # noqa: BLE001 — pgvector не установлен
+    _EmbeddingType = JSON
 
 
 def _uuid() -> str:
@@ -133,5 +144,7 @@ class Service(Base):
     category: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     icd_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Семантический вектор услуги (имя + синонимы), pgvector. None → ещё не посчитан.
+    embedding: Mapped[list[float] | None] = mapped_column(_EmbeddingType, nullable=True)
 
     items: Mapped[list[PriceItem]] = relationship(back_populates="service")
