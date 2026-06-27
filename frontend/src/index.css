@@ -21,13 +21,13 @@
   --color-accent-600: #059669;
   --color-accent-700: #047857;
 
-  --color-surface: #111111;
-  --color-canvas: #0a0a0a;
-  --color-ink: #f8fafc;
-  --color-ink-muted: #94a3b8;
-  --color-ink-faint: #475569;
-  --color-line: #1e293b;
-  --color-line-strong: #334155;
+  --color-surface: #ffffff;
+  --color-canvas: #f7f9fb;
+  --color-ink: #0f172a;
+  --color-ink-muted: #64748b;
+  --color-ink-faint: #94a3b8;
+  --color-line: #e6ebf0;
+  --color-line-strong: #cbd5e1;
 
   --color-danger-50: #fef2f2;
   --color-danger-500: #ef4444;

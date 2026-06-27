@@ -31,7 +31,8 @@ async def upload_file_to_s3(file: UploadFile, object_name: str) -> str:
     """Загрузить файл в S3. Возвращает s3:// URI."""
     if not settings.s3_endpoint:
         # Fallback to local
-        path = settings.uploads_dir / object_name
+        path = settings.uploads_dir / "local_s3" / object_name
+        path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "wb") as f:
             f.write(await file.read())
         return str(path)

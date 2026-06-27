@@ -29,6 +29,7 @@ from app.config import settings
 
 @router.post("/upload")
 async def upload_archive(
+    background: BackgroundTasks,
     file: UploadFile,
     session: AsyncSession = Depends(get_session),
 ):
@@ -40,10 +41,14 @@ async def upload_archive(
         
     doc_ids = await ingest_zip(session, tmp_path)
     
-    # Enqueue tasks in Arq Redis queue
-    redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
-    for doc_id in doc_ids:
-        await redis.enqueue_job("arq_process_document", doc_id)
+    # Enqueue tasks in Arq Redis queue (with fallback)
+    try:
+        redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        for doc_id in doc_ids:
+            await redis.enqueue_job("arq_process_document", doc_id)
+    except Exception as e:
+        print(f"Redis is unavailable, falling back to BackgroundTasks: {e}")
+        background.add_task(_process_all)
         
     return {"queued_documents": len(doc_ids), "doc_ids": doc_ids}
 
@@ -79,15 +84,19 @@ async def documents_status(session: AsyncSession = Depends(get_session)):
 
 
 @router.post("/process")
-async def trigger_processing():
+async def trigger_processing(background: BackgroundTasks):
     """Запустить обработку pending-документов вручную."""
-    redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
-    async with SessionLocal() as session:
-        res = await session.execute(
-            select(PriceDocument.doc_id).where(PriceDocument.parse_status == ParseStatus.pending)
-        )
-        for doc_id in res.scalars():
-            await redis.enqueue_job("arq_process_document", doc_id)
+    try:
+        redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        async with SessionLocal() as session:
+            res = await session.execute(
+                select(PriceDocument.doc_id).where(PriceDocument.parse_status == ParseStatus.pending)
+            )
+            for doc_id in res.scalars():
+                await redis.enqueue_job("arq_process_document", doc_id)
+    except Exception as e:
+        print(f"Redis is unavailable, falling back to BackgroundTasks: {e}")
+        background.add_task(_process_all)
     return {"status": "processing_started"}
 
 
@@ -119,10 +128,9 @@ async def rematch_all(background: BackgroundTasks):
 
 
 @router.post("/reprocess-errors")
-async def reprocess_errors():
+async def reprocess_errors(background: BackgroundTasks):
     """Сбросить error/processing документы в pending и запустить обработку."""
     from app.models import ParseStatus
-    redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     async with SessionLocal() as session:
         res = await session.execute(
             select(PriceDocument).where(
@@ -133,8 +141,16 @@ async def reprocess_errors():
         for doc in docs:
             doc.parse_status = ParseStatus.pending
             doc.parse_log = (doc.parse_log or "") + "\n[Сброшен в pending для повторной обработки]"
-            await redis.enqueue_job("arq_process_document", doc.doc_id)
         await session.commit()
+        
+    try:
+        redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        for doc in docs:
+            await redis.enqueue_job("arq_process_document", doc.doc_id)
+    except Exception as e:
+        print(f"Redis is unavailable, falling back to BackgroundTasks: {e}")
+        background.add_task(_process_all)
+        
     return {"status": "reprocess_started"}
 
 
