@@ -151,10 +151,14 @@ def _send_single_pdf_remote(path: str, serve_url: str) -> tuple[list[RawPriceRow
         "do_table_structure": "true",
         "table_mode": "accurate",
     }
+    headers = {}
+    if settings.docling_api_key:
+        headers["Authorization"] = f"Bearer {settings.docling_api_key}"
+        
     try:
         with open(path, "rb") as fh:
             files = {"files": (os.path.basename(path), fh, "application/pdf")}
-            resp = httpx.post(url, data=data, files=files, timeout=settings.docling_timeout_seconds)
+            resp = httpx.post(url, data=data, files=files, headers=headers, timeout=settings.docling_timeout_seconds)
         resp.raise_for_status()
         payload = resp.json()
     except Exception as exc:

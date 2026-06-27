@@ -83,6 +83,7 @@ class Settings(BaseSettings):
 
     use_docling: bool = True
     docling_serve_url: str | None = None   # MEDARCHIVE_DOCLING_SERVE_URL; пусто → локальный путь
+    docling_api_key: str | None = None     # MEDARCHIVE_DOCLING_API_KEY; токен для RunPod (Bearer)
     docling_max_pages: int = 12            # жёсткий лимит страниц для ЛОКАЛЬНОГО CPU-прогона
     docling_timeout_seconds: int = 120     # таймаут HTTP-вызова docling-serve
 
