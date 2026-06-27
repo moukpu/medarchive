@@ -58,15 +58,15 @@ def validate_row(
     out.price_resident_kzt = res
     out.price_nonresident_kzt = nonres
 
-    # Цена > 0 и число
+    # Цена > 0 и число. Цена ≤ 1 — мусор парсинга (заголовки секций и т.п.)
     if res is None and nonres is None:
         out.needs_review = True
         out.warnings.append("Цена не распознана")
     else:
         for label, val in (("резидент", res), ("нерезидент", nonres)):
-            if val is not None and val <= 0:
-                out.needs_review = True
-                out.warnings.append(f"Некорректная цена ({label}): {val}")
+            if val is not None and val <= 1:
+                out.skip = True
+                out.warnings.append(f"Мусорная цена ({label}): {val} — строка пропущена")
 
     # Цена нерезидента >= цены резидента
     if res is not None and nonres is not None and nonres < res:

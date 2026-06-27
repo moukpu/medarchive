@@ -89,17 +89,35 @@ def _looks_like_header(row: list[str]) -> bool:
 
 # --- Парсинг цены -----------------------------------------------------------
 
-_CURRENCY_MAP = {
-    "$": "USD", "usd": "USD", "долл": "USD",
-    "₽": "RUB", "rub": "RUB", "руб": "RUB",
-    "₸": "KZT", "kzt": "KZT", "тенге": "KZT", "тг": "KZT",
+# Символьные маркеры валют (однозначные, не требуют word boundary)
+_CURRENCY_SYMBOLS = {
+    "$": "USD",
+    "₽": "RUB",
+    "₸": "KZT",
 }
+
+# Текстовые маркеры валют — матчим по word boundary, чтобы не ловить
+# "руб" в "рубец", "rub" в "Anti-Rub IgG" и т.д.
+_CURRENCY_WORDS = [
+    (re.compile(r"\busd\b", re.IGNORECASE), "USD"),
+    (re.compile(r"\bдолл", re.IGNORECASE), "USD"),
+    (re.compile(r"(?<![-\w])rub(?![\w-])", re.IGNORECASE), "RUB"),
+    (re.compile(r"(?<![-\w])руб(?![\w-])\.?", re.IGNORECASE), "RUB"),
+    (re.compile(r"\bkzt\b", re.IGNORECASE), "KZT"),
+    (re.compile(r"\bтенге\b", re.IGNORECASE), "KZT"),
+    (re.compile(r"\bтг\b\.?", re.IGNORECASE), "KZT"),
+]
 
 
 def detect_currency(text: str, default: str = "KZT") -> str:
-    t = (text or "").lower()
-    for key, cur in _CURRENCY_MAP.items():
-        if key in t:
+    t = text or ""
+    # Сначала проверяем однозначные символы
+    for sym, cur in _CURRENCY_SYMBOLS.items():
+        if sym in t:
+            return cur
+    # Затем текстовые маркеры с word boundary
+    for pattern, cur in _CURRENCY_WORDS:
+        if pattern.search(t):
             return cur
     return default
 

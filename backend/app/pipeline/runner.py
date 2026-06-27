@@ -104,11 +104,24 @@ async def process_document(session: AsyncSession, doc_id: str, index: CatalogInd
             log.extend(result.warnings)
 
         # LLM-фоллбэк — если результат всё ещё мусорный.
-        if _looks_low_quality(result.rows):
-            if settings.use_llm_extraction and result.raw_text:
-                from app.extractors.llm import llm_available, rows_from_text_llm
+        if _looks_low_quality(result.rows) and settings.use_llm_extraction:
+            from app.extractors.llm import (
+                llm_available,
+                rows_from_pdf_images_llm,
+                rows_from_text_llm,
+            )
 
-                if llm_available():
+            if llm_available():
+                # Для PDF: сначала vision-OCR (читает изображения страниц напрямую),
+                # это надёжнее, чем прогонять мусорный OCR-текст через LLM.
+                if doc.file_format in (FileFormat.pdf, FileFormat.scan_pdf):
+                    vision_rows, vision_warnings = rows_from_pdf_images_llm(doc.file_path)
+                    log.extend(vision_warnings)
+                    if vision_rows:
+                        result.rows = vision_rows
+
+                # Если vision-OCR не дал результата — текстовый LLM-фоллбэк
+                if _looks_low_quality(result.rows) and result.raw_text:
                     llm_rows, llm_warnings = rows_from_text_llm(result.raw_text)
                     log.extend(llm_warnings)
                     if llm_rows:

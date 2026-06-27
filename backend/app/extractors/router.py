@@ -25,18 +25,63 @@ def detect_format(path: str) -> FileFormat:
 
 
 def _is_scanned_pdf(path: str) -> bool:
+    """Определить, является ли PDF сканом (требует OCR).
+
+    Эвристики (по первым 5 страницам):
+    1. Если на странице есть изображение, покрывающее >50% площади — скан.
+    2. Если текста совсем мало (<50 символов на страницу) — скан.
+    3. Если текст есть, но >40% символов — не буква/цифра/пробел (OCR-мусор) — скан.
+    """
     try:
         import fitz  # PyMuPDF
     except ImportError:
         return False
     try:
         doc = fitz.open(path)
-        text_len = 0
-        for page in doc:
-            text_len += len(page.get_text("text").strip())
-            if text_len > 100:
-                return False  # достаточно текста — это текстовый PDF
-        return True
+        pages_to_check = min(len(doc), 5)
+        if pages_to_check == 0:
+            return False
+
+        scan_pages = 0
+        for i in range(pages_to_check):
+            page = doc[i]
+            page_area = page.rect.width * page.rect.height
+            if page_area <= 0:
+                continue
+
+            # Проверка 1: крупные изображения (>50% площади страницы)
+            has_large_image = False
+            try:
+                for img in page.get_images(full=True):
+                    try:
+                        bbox = page.get_image_bbox(img)
+                        img_area = bbox.width * bbox.height
+                        if img_area / page_area > 0.5:
+                            has_large_image = True
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+            if has_large_image:
+                scan_pages += 1
+                continue
+
+            # Проверка 2: мало текста или мусорный текст
+            text = page.get_text("text").strip()
+            if len(text) < 50:
+                scan_pages += 1
+                continue
+
+            # Проверка 3: качество текста — много мусорных символов = OCR-слой
+            alpha_digit = sum(1 for c in text if c.isalpha() or c.isdigit() or c.isspace())
+            if len(text) > 0 and alpha_digit / len(text) < 0.6:
+                scan_pages += 1
+
+        doc.close()
+        # Если >50% проверенных страниц — сканы, весь документ — скан
+        return scan_pages > pages_to_check / 2
     except Exception:
         return False
 

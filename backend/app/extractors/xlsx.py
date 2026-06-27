@@ -41,7 +41,14 @@ class XlsxExtractor:
     def extract(self, path: str) -> ExtractResult:
         result = ExtractResult()
         is_legacy = Path(path).suffix.lower() == ".xls"
-        sheets = _sheets_xls(path) if is_legacy else _sheets_xlsx(path)
+        try:
+            sheets = list(_sheets_xls(path) if is_legacy else _sheets_xlsx(path))
+        except Exception:
+            # Автофоллбэк: если openpyxl не смог — пробуем xlrd, и наоборот
+            try:
+                sheets = list(_sheets_xls(path) if not is_legacy else _sheets_xlsx(path))
+            except Exception:
+                raise
 
         raw_chunks: list[str] = []
         for title, matrix in sheets:
