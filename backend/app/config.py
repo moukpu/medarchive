@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     price_anomaly_ratio: float = 0.5  # изменение > 50% → флаг аномалии
 
     # Конкурентная обработка документов в фоне (каждая задача — своя сессия БД)
-    process_concurrency: int = 2  # 2 для free-tier Render (512 МБ RAM)
+    process_concurrency: int = 1  # 1 для free-tier Render (512 МБ RAM)
 
     # Авто-сид справочника при пустой БД (для свежего деплоя). Пустая строка → не сидить.
     seed_catalog_path: str = str(BASE_DIR / "data" / "samples" / "catalog.json")

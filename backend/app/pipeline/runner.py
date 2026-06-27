@@ -72,26 +72,38 @@ async def process_document(session: AsyncSession, doc_id: str, index: CatalogInd
 
     log: list[str] = []
     try:
-        extractor = get_extractor(doc.file_format)
-        # Извлечение синхронное и CPU-bound (pdfplumber/openpyxl/OCR) — уносим в поток,
-        # чтобы конкурентные документы реально обрабатывались параллельно.
-        result = await asyncio.to_thread(extractor.extract, doc.file_path)
-        doc.raw_content = (result.raw_text or "")[:200_000]
-        log.extend(result.warnings)
+        from app.extractors.base import ExtractResult
 
-        # PDF/scan_pdf → ВСЕГДА сначала Docling (GPU RunPod), т.к. он точнее
-        # и быстрее на мощном железе. Детерминированный pdfplumber используется
-        # только как фоллбэк, если Docling недоступен.
+        # PDF/scan_pdf → отправляем НАПРЯМУЮ на Docling (GPU RunPod),
+        # МИНУЯ тяжёлый pdfplumber, чтобы не жрать RAM на Render free tier.
         if doc.file_format in (FileFormat.pdf, FileFormat.scan_pdf):
             from app.extractors.docling_extractor import docling_available, rows_from_pdf_docling
 
             if docling_available():
                 d_rows, d_warnings = await asyncio.to_thread(rows_from_pdf_docling, doc.file_path)
                 log.extend(d_warnings)
-                if d_rows:
-                    result.rows = d_rows  # Docling дал результат — используем его
+                # Минимальный raw_content для контекста (без тяжёлого парсинга)
+                try:
+                    with open(doc.file_path, "rb") as _f:
+                        _head = _f.read(1024)
+                    doc.raw_content = f"[PDF отправлен на Docling GPU, {len(d_rows)} позиций извлечено]"
+                except Exception:
+                    doc.raw_content = "[PDF]"
+                result = ExtractResult(rows=d_rows, raw_text=doc.raw_content, warnings=d_warnings)
+            else:
+                # Docling недоступен — фоллбэк на pdfplumber
+                extractor = get_extractor(doc.file_format)
+                result = await asyncio.to_thread(extractor.extract, doc.file_path)
+                doc.raw_content = (result.raw_text or "")[:200_000]
+                log.extend(result.warnings)
+        else:
+            # Для XLSX/DOCX — обычный детерминированный парсер
+            extractor = get_extractor(doc.file_format)
+            result = await asyncio.to_thread(extractor.extract, doc.file_path)
+            doc.raw_content = (result.raw_text or "")[:200_000]
+            log.extend(result.warnings)
 
-        # Для не-PDF или если Docling не помог — проверяем качество и пробуем LLM.
+        # LLM-фоллбэк — если результат всё ещё мусорный.
         if _looks_low_quality(result.rows):
             if settings.use_llm_extraction and result.raw_text:
                 from app.extractors.llm import llm_available, rows_from_text_llm
