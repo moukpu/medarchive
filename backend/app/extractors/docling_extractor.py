@@ -82,14 +82,72 @@ def _rows_from_markdown(md: str) -> list[RawPriceRow]:
 # --- remote (docling-serve / GPU) -------------------------------------------
 
 def rows_from_pdf_docling_remote(path: str, serve_url: str) -> tuple[list[RawPriceRow], list[str]]:
-    """POST файла на docling-serve, разбор markdown-таблиц ответа."""
+    """POST файла на docling-serve, разбор markdown-таблиц ответа.
+    Если страниц больше 10, разбиваем на части по 10 страниц, чтобы обойти 504 таймаут прокси RunPod.
+    """
     import httpx
+    import fitz  # PyMuPDF
+    import tempfile
 
+    warnings: list[str] = []
+
+    # 1. Открываем PDF и смотрим число страниц
+    try:
+        doc = fitz.open(path)
+        total_pages = len(doc)
+    except Exception as exc:
+        warnings.append(f"Ошибка при открытии PDF для подсчета страниц: {exc}")
+        return [], warnings
+
+    # 2. Если файл маленький, отправляем целиком
+    if total_pages <= 10:
+        res_rows, res_warns = _send_single_pdf_remote(path, serve_url)
+        doc.close()
+        return res_rows, res_warns
+
+    # 3. Если файл большой, делим на чанки по 10 страниц
+    all_rows: list[RawPriceRow] = []
+    chunk_size = 10
+
+    for start_idx in range(0, total_pages, chunk_size):
+        end_idx = min(start_idx + chunk_size, total_pages)
+        # Вырезаем страницы в новый временный PDF
+        try:
+            chunk_doc = fitz.open()
+            chunk_doc.insert_pdf(doc, from_page=start_idx, to_page=end_idx - 1)
+            fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
+            os.close(fd)
+            chunk_doc.save(tmp_path)
+            chunk_doc.close()
+        except Exception as exc:
+            warnings.append(f"Ошибка при нарезке страниц {start_idx}-{end_idx}: {exc}")
+            continue
+
+        # Отправляем чанк на docling-serve
+        try:
+            chunk_rows, chunk_warnings = _send_single_pdf_remote(tmp_path, serve_url)
+            all_rows.extend(chunk_rows)
+            warnings.extend(chunk_warnings)
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+    doc.close()
+    warnings.append(f"Сплит-обработка завершена: обработано {total_pages} страниц, найдено {len(all_rows)} позиций")
+    return all_rows, warnings
+
+
+def _send_single_pdf_remote(path: str, serve_url: str) -> tuple[list[RawPriceRow], list[str]]:
+    """Вспомогательный метод отправки одного PDF чанка на docling-serve."""
+    import httpx
     warnings: list[str] = []
     url = serve_url.rstrip("/") + "/v1/convert/file"
     data = {
         "to_formats": "md",
-        "do_ocr": "false",            # целевые файлы — текстовые PDF, OCR не нужен
+        "do_ocr": "false",
         "do_table_structure": "true",
         "table_mode": "accurate",
     }
@@ -99,7 +157,7 @@ def rows_from_pdf_docling_remote(path: str, serve_url: str) -> tuple[list[RawPri
             resp = httpx.post(url, data=data, files=files, timeout=settings.docling_timeout_seconds)
         resp.raise_for_status()
         payload = resp.json()
-    except Exception as exc:  # noqa: BLE001 — сеть/таймаут/протокол → деградируем к LLM
+    except Exception as exc:
         warnings.append(f"docling-serve недоступен: {exc}")
         return [], warnings
 
@@ -109,7 +167,6 @@ def rows_from_pdf_docling_remote(path: str, serve_url: str) -> tuple[list[RawPri
         warnings.append(f"docling-serve вернул status={status or 'нет'} без таблиц")
         return [], warnings
     rows = _rows_from_markdown(md)
-    warnings.append(f"docling-serve: распознано позиций {len(rows)} (status={status})")
     return rows, warnings
 
 
