@@ -156,11 +156,21 @@ async def reprocess_errors(background: BackgroundTasks):
 
 @router.post("/clear-db")
 async def clear_database(session: AsyncSession = Depends(get_session)):
-    """Очистить базу данных (TRUNCATE всех таблиц CASCADE)."""
+    """Очистить базу данных (все основные таблицы)."""
     from sqlalchemy import text
-    # TRUNCATE удаляет данные из таблиц, CASCADE обрабатывает внешние ключи.
-    await session.execute(text("TRUNCATE TABLE price_items, price_documents, partners, services CASCADE;"))
-    await session.commit()
+    try:
+        # Для Postgres (быстрее, обнуляет счетчики, удаляет каскадно)
+        await session.execute(text("TRUNCATE TABLE price_items, price_documents, partners, services CASCADE;"))
+        await session.commit()
+    except Exception:
+        # Фоллбэк для SQLite (локальная разработка)
+        await session.rollback()
+        await session.execute(text("DELETE FROM price_items;"))
+        await session.execute(text("DELETE FROM price_documents;"))
+        await session.execute(text("DELETE FROM partners;"))
+        await session.execute(text("DELETE FROM services;"))
+        await session.commit()
+        
     return {"status": "db_cleared"}
 
 
