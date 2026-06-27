@@ -79,30 +79,26 @@ async def process_document(session: AsyncSession, doc_id: str, index: CatalogInd
         doc.raw_content = (result.raw_text or "")[:200_000]
         log.extend(result.warnings)
 
-        # Quality-gate: детерминированный парсер дал 0 строк ИЛИ результат выглядит
-        # мусорным (заголовки разделов как цена=1, цена затекла в название, слитые
-        # строки). Цепочка фоллбэков: pdfplumber → docling → LLM.
+        # PDF/scan_pdf → ВСЕГДА сначала Docling (GPU RunPod), т.к. он точнее
+        # и быстрее на мощном железе. Детерминированный pdfplumber используется
+        # только как фоллбэк, если Docling недоступен.
+        if doc.file_format in (FileFormat.pdf, FileFormat.scan_pdf):
+            from app.extractors.docling_extractor import docling_available, rows_from_pdf_docling
+
+            if docling_available():
+                d_rows, d_warnings = await asyncio.to_thread(rows_from_pdf_docling, doc.file_path)
+                log.extend(d_warnings)
+                if d_rows:
+                    result.rows = d_rows  # Docling дал результат — используем его
+
+        # Для не-PDF или если Docling не помог — проверяем качество и пробуем LLM.
         if _looks_low_quality(result.rows):
-            # 1) Docling (ML-структура таблиц) — для PDF. Бесплатно (без OpenAI) и
-            #    структурно чище, чем LLM по плоскому OCR-тексту. Удалённый GPU-путь
-            #    или локальный пакет — зависит от настроек; недоступен → пропускаем.
-            if doc.file_format in (FileFormat.pdf, FileFormat.scan_pdf):
-                from app.extractors.docling_extractor import docling_available, rows_from_pdf_docling
-
-                if docling_available():
-                    d_rows, d_warnings = rows_from_pdf_docling(doc.file_path)
-                    log.extend(d_warnings)
-                    if d_rows:
-                        result.rows = d_rows
-
-            # 2) LLM-фоллбэк — если docling недоступен/не помог и результат всё ещё мусорный.
-            if settings.use_llm_extraction and result.raw_text and _looks_low_quality(result.rows):
+            if settings.use_llm_extraction and result.raw_text:
                 from app.extractors.llm import llm_available, rows_from_text_llm
 
                 if llm_available():
                     llm_rows, llm_warnings = rows_from_text_llm(result.raw_text)
                     log.extend(llm_warnings)
-                    # детерминированный результат признан низкокачественным — доверяем LLM
                     if llm_rows:
                         result.rows = llm_rows
 
