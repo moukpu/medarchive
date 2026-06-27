@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     # Tesseract/regex (пайплайн остаётся рабочим).
     hf_api_key: str | None = None      # MEDARCHIVE_HF_API_KEY или HF_TOKEN
     llm_base_url: str = "https://router.huggingface.co/v1"  # OpenAI-compat endpoint
-    llm_model: str = "meta-llama/llama-4-scout"  # бесплатная VLM с vision на HF
+    llm_model: str = "meta-llama/Llama-3.2-11B-Vision-Instruct"  # бесплатная VLM с vision на HF
     use_llm_extraction: bool = True
     llm_min_rows: int = 1     # если детерминированный парсер дал < N строк → пробуем LLM
     llm_max_pages: int = 10   # лимит страниц для vision-OCR (контроль стоимости)
