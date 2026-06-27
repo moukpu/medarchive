@@ -48,7 +48,7 @@ function StatusIcon({ s }: { s: string }) {
 function StatCard({ icon, label, value, tone = "default" }: { icon: React.ReactNode; label: string; value: number | string; tone?: "default" | "accent" }) {
   const numericValue = typeof value === 'number' ? value : Number(value) || 0;
   return (
-    <MagicCard className="flex flex-col items-start gap-4 p-6 glass-panel hover-lift bg-white shadow-card" gradientColor={tone === "accent" ? "rgba(6, 182, 212, 0.15)" : "rgba(15, 23, 42, 0.03)"}>
+    <MagicCard className="flex flex-col items-start gap-4 p-6 glass-panel hover-lift shadow-card" gradientColor={tone === "accent" ? "rgba(6, 182, 212, 0.15)" : "rgba(255, 255, 255, 0.03)"}>
       <div
         className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-sm ${
           tone === "accent" ? "bg-primary-50 text-primary-600 shadow-primary-500/10" : "bg-canvas text-ink-muted border border-line"
@@ -158,7 +158,7 @@ export function DashboardView() {
           {/* Главная колонка загрузки (Bento Grid - Main span 2) */}
           <div className="lg:col-span-2 flex flex-col gap-6">
             <MagicCard
-              className={`p-10 border-dashed transition-all duration-300 bg-white shadow-sm ${dragOver ? "border-primary-400 bg-primary-50/50 scale-[1.02]" : "border-line-strong"}`}
+              className={`p-10 border-dashed transition-all duration-300 glass-panel shadow-sm ${dragOver ? "border-primary-400 bg-primary-900/20 scale-[1.02]" : "border-line-strong"}`}
               gradientColor="rgba(6, 182, 212, 0.05)"
               onDragOver={(e: React.DragEvent) => {
                 e.preventDefault();
@@ -209,7 +209,7 @@ export function DashboardView() {
             </MagicCard>
 
             {batch && batch.length > 0 && (
-              <MagicCard className="p-6 bg-white shadow-card" gradientColor="rgba(15, 23, 42, 0.03)">
+              <MagicCard className="p-6 glass-panel shadow-card" gradientColor="rgba(255, 255, 255, 0.03)">
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="flex items-center gap-2 font-semibold text-ink">
                     {allDone ? (
