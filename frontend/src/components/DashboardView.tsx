@@ -208,7 +208,10 @@ export function DashboardView() {
                   type="file"
                   accept=".zip"
                   className="hidden"
-                  onChange={(e) => upload(e.target.files?.[0])}
+                  onChange={(e) => {
+                    upload(e.target.files?.[0]);
+                    e.target.value = ''; // Сбрасываем значение, чтобы можно было выбрать тот же файл снова
+                  }}
                 />
                 
                 <ShimmerButton 
