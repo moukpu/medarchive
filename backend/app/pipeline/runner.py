@@ -170,6 +170,7 @@ async def process_document(session: AsyncSession, doc_id: str, index: CatalogInd
 
         # 2. LLM-фоллбэк по тексту: только если ТЕКСТ есть, но строки мусорные.
         llm_succeeded = False
+        backup_rows = None
         if not is_scan and _looks_low_quality(result.rows) and settings.use_llm_extraction:
             from app.extractors.llm import llm_available, rows_from_text_llm
             if llm_available() and result.raw_text:
@@ -177,8 +178,13 @@ async def process_document(session: AsyncSession, doc_id: str, index: CatalogInd
                 llm_rows, llm_warnings = rows_from_text_llm(result.raw_text)
                 log.extend(llm_warnings)
                 if llm_rows:
-                    result.rows = llm_rows
-                    llm_succeeded = True
+                    if _looks_low_quality(llm_rows):
+                        log.append("LLM тоже вернула подозрительные данные. Откладываем в резерв для тяжелого фоллбэка.")
+                        backup_rows = llm_rows
+                        result.rows = []
+                    else:
+                        result.rows = llm_rows
+                        llm_succeeded = True
                 else:
                     log.append("LLM не смогла найти позиции (вероятно, слишком сложная структура).")
 
@@ -194,8 +200,7 @@ async def process_document(session: AsyncSession, doc_id: str, index: CatalogInd
                     result.rows = v_rows
 
         # 3. Тяжёлый путь (Docling) — ТОЛЬКО когда строк по-прежнему нет.
-        #    Никогда не перезаписываем уже извлечённые строки: на кривых сканах
-        #    docling берёт мусор и затёр бы хороший vision/таблично-парсенный результат.
+        #    Никогда не перезаписываем уже извлечённые хорошие строки.
         needs_heavy_ocr = is_pdf and not result.rows
 
         if needs_heavy_ocr:
@@ -214,6 +219,10 @@ async def process_document(session: AsyncSession, doc_id: str, index: CatalogInd
                     log.append("Docling также не смог найти позиции.")
             else:
                 log.append("Docling недоступен на RunPod, пропускаем тяжелый OCR.")
+
+        if not result.rows and backup_rows:
+            log.append("Фоллбэк не дал результата. Возвращаем подозрительный ответ от LLM.")
+            result.rows = backup_rows
 
         if not result.rows:
             doc.parse_status = ParseStatus.error

@@ -176,6 +176,21 @@ def parse_price(value) -> float | None:
                 cleaned = parts[0] + "." + parts[1]    # «10.50» → 10.5 (десятичный)
     try:
         val = float(cleaned)
+        # Если цена больше 20 млн (нереалистично для медицины) - это 100% склейка кода и цены или нескольких цен.
+        # Например, 2782020865 (код 2782.020 + цена 865) или 250028003200 (цены 2500, 2800, 3200).
+        if abs(val) > 20_000_000:
+            s_val = str(int(abs(val)))
+            # Ищем 3-5 цифр в самом конце строки (цена обычно идет последней после кода)
+            m = re.search(r'([1-9]\d{2,4})$', s_val)
+            if m:
+                val = float(m.group(1))
+            else:
+                # Иначе ищем в начале
+                m = re.search(r'^([1-9]\d{2,4})', s_val)
+                if m:
+                    val = float(m.group(1))
+                else:
+                    return None
         return -val if neg else val
     except ValueError:
         return None
