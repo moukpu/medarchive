@@ -7,10 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e .
-
 COPY . .
+RUN pip install --no-cache-dir .
 
 EXPOSE 8000
 # shell-форма, чтобы развернуть $PORT (Render/Railway задают порт через эту переменную)

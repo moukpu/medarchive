@@ -75,58 +75,70 @@ async def process_document(session: AsyncSession, doc_id: str, index: CatalogInd
     try:
         from app.extractors.base import ExtractResult
 
-        # PDF/scan_pdf → отправляем НАПРЯМУЮ на Docling (GPU RunPod),
-        # МИНУЯ тяжёлый pdfplumber, чтобы не жрать RAM на Render free tier.
-        if doc.file_format in (FileFormat.pdf, FileFormat.scan_pdf):
-            from app.extractors.docling_extractor import docling_available, rows_from_pdf_docling
+        # 1. Быстрый и дешевый путь: всегда пробуем локальный экстрактор (например, pdfplumber для PDF)
+        extractor = get_extractor(doc.file_format)
+        result = await asyncio.to_thread(extractor.extract, doc.file_path)
+        doc.raw_content = (result.raw_text or "")[:200_000]
+        log.extend(result.warnings)
 
+        is_pdf = doc.file_format in (FileFormat.pdf, FileFormat.scan_pdf)
+        # Скан — только если строк НЕ извлеклось И текста почти нет. Если локальный
+        # extractor (для scan_pdf это уже vision-OCR) дал строки — это НЕ «пустой скан»,
+        # и тяжёлый путь запускать нельзя, иначе он затрёт хороший результат.
+        is_scan = (
+            is_pdf
+            and not result.rows
+            and len((result.raw_text or "").strip()) < 50
+        )
+        if is_scan:
+            log.append("Текст не извлечён — документ похож на скан/картинку.")
+
+        # 2. LLM-фоллбэк по тексту: только если ТЕКСТ есть, но строки мусорные.
+        llm_succeeded = False
+        if not is_scan and _looks_low_quality(result.rows) and settings.use_llm_extraction:
+            from app.extractors.llm import llm_available, rows_from_text_llm
+            if llm_available() and result.raw_text:
+                log.append("Сырой текст отправлен в LLM для нормализации...")
+                llm_rows, llm_warnings = rows_from_text_llm(result.raw_text)
+                log.extend(llm_warnings)
+                if llm_rows:
+                    result.rows = llm_rows
+                    llm_succeeded = True
+                else:
+                    log.append("LLM не смогла найти позиции (вероятно, слишком сложная структура).")
+
+        # 2b. Vision-OCR для скана, если строк до сих пор нет (например, текстовый PDF
+        #     ошибочно не распознан как скан, либо vision в extractor дал пусто).
+        if is_scan and not result.rows and settings.use_llm_extraction:
+            from app.extractors.llm import llm_available, rows_from_pdf_images_llm
+            if llm_available():
+                log.append("Скан → распознаём таблицу через vision-OCR...")
+                v_rows, v_warnings = await asyncio.to_thread(rows_from_pdf_images_llm, doc.file_path)
+                log.extend(v_warnings)
+                if v_rows:
+                    result.rows = v_rows
+
+        # 3. Тяжёлый путь (Docling) — ТОЛЬКО когда строк по-прежнему нет.
+        #    Никогда не перезаписываем уже извлечённые строки: на кривых сканах
+        #    docling берёт мусор и затёр бы хороший vision/таблично-парсенный результат.
+        needs_heavy_ocr = is_pdf and not result.rows
+
+        if needs_heavy_ocr:
+            from app.extractors.docling_extractor import docling_available, rows_from_pdf_docling
             if docling_available():
+                log.append("Переход на тяжелый визуальный анализ (Docling на GPU)...")
                 d_rows, d_warnings = await asyncio.to_thread(rows_from_pdf_docling, doc.file_path)
                 log.extend(d_warnings)
-                # Минимальный raw_content для контекста (без тяжёлого парсинга)
-                try:
-                    with open(doc.file_path, "rb") as _f:
-                        _head = _f.read(1024)
-                    doc.raw_content = f"[PDF отправлен на Docling GPU, {len(d_rows)} позиций извлечено]"
-                except Exception:
-                    doc.raw_content = "[PDF]"
-                result = ExtractResult(rows=d_rows, raw_text=doc.raw_content, warnings=d_warnings)
+                if d_rows:
+                    result.rows = d_rows
+                    try:
+                        doc.raw_content = f"[PDF обработан через Docling GPU, {len(d_rows)} позиций]"
+                    except Exception:
+                        pass
+                else:
+                    log.append("Docling также не смог найти позиции.")
             else:
-                # Docling недоступен — фоллбэк на pdfplumber
-                extractor = get_extractor(doc.file_format)
-                result = await asyncio.to_thread(extractor.extract, doc.file_path)
-                doc.raw_content = (result.raw_text or "")[:200_000]
-                log.extend(result.warnings)
-        else:
-            # Для XLSX/DOCX — обычный детерминированный парсер
-            extractor = get_extractor(doc.file_format)
-            result = await asyncio.to_thread(extractor.extract, doc.file_path)
-            doc.raw_content = (result.raw_text or "")[:200_000]
-            log.extend(result.warnings)
-
-        # LLM-фоллбэк — если результат всё ещё мусорный.
-        if _looks_low_quality(result.rows) and settings.use_llm_extraction:
-            from app.extractors.llm import (
-                llm_available,
-                rows_from_pdf_images_llm,
-                rows_from_text_llm,
-            )
-
-            if llm_available():
-                # Для PDF: сначала vision-OCR (читает изображения страниц напрямую),
-                # это надёжнее, чем прогонять мусорный OCR-текст через LLM.
-                if doc.file_format in (FileFormat.pdf, FileFormat.scan_pdf):
-                    vision_rows, vision_warnings = rows_from_pdf_images_llm(doc.file_path)
-                    log.extend(vision_warnings)
-                    if vision_rows:
-                        result.rows = vision_rows
-
-                # Если vision-OCR не дал результата — текстовый LLM-фоллбэк
-                if _looks_low_quality(result.rows) and result.raw_text:
-                    llm_rows, llm_warnings = rows_from_text_llm(result.raw_text)
-                    log.extend(llm_warnings)
-                    if llm_rows:
-                        result.rows = llm_rows
+                log.append("Docling недоступен на RunPod, пропускаем тяжелый OCR.")
 
         if not result.rows:
             doc.parse_status = ParseStatus.error
@@ -191,6 +203,11 @@ async def process_document(session: AsyncSession, doc_id: str, index: CatalogInd
                 needs_review_doc = True
             if v.warnings:
                 log.append(f"{row.service_name_raw}: " + "; ".join(v.warnings))
+
+        # Документ обрезан по лимитам LLM (страницы/чанки) → часть строк потеряна,
+        # требуется ручная проверка. Маркер ставят экстракторы (TRUNCATED_MARK).
+        if any("ОБРЕЗАНО" in line for line in log):
+            needs_review_doc = True
 
         doc.parse_status = ParseStatus.needs_review if needs_review_doc else ParseStatus.done
         doc.parsed_at = datetime.now(timezone.utc)

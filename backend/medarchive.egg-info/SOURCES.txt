@@ -6,6 +6,8 @@ app/db.py
 app/main.py
 app/models.py
 app/schemas.py
+app/storage.py
+app/worker.py
 app/api/__init__.py
 app/api/admin.py
 app/api/partners.py
@@ -24,8 +26,11 @@ app/extractors/router.py
 app/extractors/xlsx.py
 app/matching/__init__.py
 app/matching/catalog.py
+app/matching/embed_service.py
 app/matching/embeddings.py
 app/matching/fuzzy.py
+app/matching/llm_normalize.py
+app/matching/pgvector_match.py
 app/pipeline/__init__.py
 app/pipeline/fx.py
 app/pipeline/ingest.py
@@ -39,6 +44,7 @@ medarchive.egg-info/entry_points.txt
 medarchive.egg-info/requires.txt
 medarchive.egg-info/top_level.txt
 tests/test_docling_extractor.py
+tests/test_embed_service.py
 tests/test_parsing.py
 tests/test_pipeline_e2e.py
 tests/test_review_api.py

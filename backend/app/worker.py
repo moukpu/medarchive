@@ -31,10 +31,17 @@ async def arq_process_document(ctx, doc_id: str):
         # Локальный fallback (если не S3)
         local_path = s3_uri
         
-    # 2. Вызываем логику парсинга
+    # 2. Вызываем логику парсинга.
+    #    process_document читает путь из doc.file_path, поэтому подменяем его на
+    #    локально скачанный файл (3-й позиционный аргумент — это CatalogIndex,
+    #    НЕ путь; раньше сюда ошибочно передавался local_path → падение задачи).
     async with SessionLocal() as session:
         try:
-            await process_document(session, doc_id, local_path)
+            doc = await session.get(PriceDocument, doc_id)
+            if doc and doc.file_path != local_path:
+                doc.file_path = local_path
+                await session.commit()
+            await process_document(session, doc_id)
         except Exception as e:
             # Обновляем статус в БД в случае ошибки вне process_document
             doc = await session.get(PriceDocument, doc_id)

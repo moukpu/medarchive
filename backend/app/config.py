@@ -63,11 +63,18 @@ class Settings(BaseSettings):
     # Tesseract/regex (пайплайн остаётся рабочим).
     hf_api_key: str | None = None      # MEDARCHIVE_HF_API_KEY или HF_TOKEN
     llm_base_url: str = "https://router.huggingface.co/v1"  # OpenAI-compat endpoint
-    llm_model: str = "meta-llama/Llama-3.2-11B-Vision-Instruct"  # бесплатная VLM с vision на HF
+    # VLM (текст + vision) на HF Inference Providers. Должна быть в списке
+    # /v1/models включённых провайдеров, иначе 400 model_not_supported.
+    # Qwen2.5-VL-72B доступна и точно разделяет колонки резидент/нерезидент.
+    llm_model: str = "Qwen/Qwen2.5-VL-72B-Instruct"
     use_llm_extraction: bool = True
     llm_min_rows: int = 1     # если детерминированный парсер дал < N строк → пробуем LLM
-    llm_max_pages: int = 10   # лимит страниц для vision-OCR (контроль стоимости)
-    llm_max_chunks: int = 12  # лимит текстовых чанков на документ (контроль стоимости)
+    # Лимиты-предохранители для контроля стоимости. При превышении документ
+    # обрабатывается до лимита, а в parse_log пишется ЯВНОЕ предупреждение об
+    # обрезке (строка с «ОБРЕЗАНО») и документ помечается needs_review — тихой
+    # потери строк больше нет. Поднимай через env, если нужны полные большие доки.
+    llm_max_pages: int = 30   # vision-OCR: страниц скана (≈30 стр одного скан-PDF)
+    llm_max_chunks: int = 40  # текст-LLM: чанков ~8000 симв (≈200 стр текста)
 
     # Валюты и курсы к KZT (на дату прайса; для MVP — статическая таблица, см. fx.py)
     base_currency: str = "KZT"

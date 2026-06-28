@@ -35,7 +35,7 @@ class BaseExtractor(Protocol):
 
 _SERVICE_KW = ("услуг", "наименован", "название", "сервис", "анализ", "исследован", "service", "name")
 _RESIDENT_KW = ("резидент",)
-_NONRESIDENT_KW = ("нерезидент", "не резидент", "non-resident", "nonresident")
+_NONRESIDENT_KW = ("нерезидент", "не резидент", "non-resident", "nonresident", "иностран")
 _PRICE_KW = ("цена", "стоимост", "тариф", "price", "kzt", "тенге", "сум")
 _CODE_KW = ("код", "code", "артикул")
 # Ключевые слова колонки порядковых номеров — ЯВНО исключаем из кандидатов

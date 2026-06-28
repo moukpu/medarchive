@@ -28,15 +28,25 @@ from app.extractors.base import RawPriceRow
 # Валюты, поддерживаемые моделью данных (Currency enum). Прочее → KZT.
 _ALLOWED_CURRENCY = {"KZT", "USD", "RUB"}
 
+# Маркер обрезки документа по лимитам. runner ищет эту подстроку в warnings,
+# чтобы пометить документ needs_review (явная, а не тихая потеря строк).
+TRUNCATED_MARK = "ВНИМАНИЕ: ОБРЕЗАНО"
+
 _SYSTEM_PROMPT = (
     "Ты — парсер прайс-листов медицинских клиник (язык: русский/казахский). "
-    "Тебе дают текст или изображение страницы прайса. Извлеки КАЖДУЮ строку-услугу "
-    "с ценой. Различай колонки 'резидент' и 'нерезидент', если они есть. "
+    "Тебе дают текст или изображение страницы прайса (часто это плохой/кривой скан). "
+    "Нужны ТОЛЬКО три поля на строку: название услуги, цена резидента, цена нерезидента. "
+    "Извлеки КАЖДУЮ строку-услугу с ценой. Различай колонки 'резидент' и 'нерезидент' "
+    "(иностранцы), если они есть. "
     "Если цена одна (без деления на резидент/нерезидент) — клади её в price_single. "
     "Сохраняй исходное название услуги как в документе, без перевода и сокращений. "
-    "Игнорируй заголовки секций, итоги, примечания и пустые строки без цены. "
+    "Игнорируй заголовки секций, итоги, примечания, номера строк (№ п/п) и пустые строки без цены. "
     "Валюта по умолчанию KZT (тенге, ₸, тг); распознавай USD ($) и RUB (₽, руб). "
     "Числа — без пробелов-разделителей и валютных символов. "
+    "КРИТИЧНО ПРИ ПЛОХОМ СКАНЕ: НЕ ВЫДУМЫВАЙ. Если строка/цифры нечитаемы или ты не "
+    "уверен в значении — пропусти эту строку целиком, не угадывай цену. Лучше вернуть "
+    "меньше строк, но точных, чем много с ошибочными цифрами. Не приписывай услуге "
+    "цену из соседней строки. Если на странице вообще нет таблицы услуг — верни пустой rows. "
     "ВАЖНО: ответ СТРОГО в формате JSON (без маркдаун-обёртки, без пояснений), "
     "структура: {\"rows\": [{\"service_name\": \"...\", \"price_resident\": число|null, "
     "\"price_nonresident\": число|null, \"price_single\": число|null, "
@@ -81,29 +91,26 @@ def _api_key() -> str | None:
 
 
 def llm_available() -> bool:
-    """LLM-извлечение включено и есть HF-токен или OpenAI-токен + установлен пакет openai."""
-    if not settings.use_llm_extraction or not _api_key():
+    """Включён ли LLM-фоллбэк: `use_llm_extraction=True` + есть ключ."""
+    if not settings.use_llm_extraction:
         return False
-    try:
-        import openai  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    return bool(settings.openai_api_key) or bool(settings.hf_api_key)
 
 
-@lru_cache(maxsize=1)
 def _client():
     from openai import OpenAI
+    # Если есть OpenAI-ключ — используем его (или кастомный URL, если это OpenAI-совместимый эндпоинт типа RunPod/vLLM)
+    if settings.openai_api_key:
+        return OpenAI(api_key=settings.openai_api_key, base_url=settings.llm_base_url)
+    
+    # Иначе — Hugging Face Serverless Inference API (Router)
+    url = settings.llm_base_url or "https://router.huggingface.co/v1"
+    return OpenAI(api_key=settings.hf_api_key, base_url=url)
 
-    key = _api_key()
-    base_url = settings.llm_base_url
-    if key and key.startswith("sk-"):
-        base_url = None
 
-    return OpenAI(
-        api_key=key,
-        base_url=base_url,
-    )
+# Модель по умолчанию, если не задана. 
+# Используем мощную бесплатную модель на HF, так как Vision модели часто недоступны на Free Tier.
+DEFAULT_MODEL = "Qwen/Qwen2.5-Coder-32B-Instruct"
 
 
 def _rows_from_payload(payload: dict) -> list[RawPriceRow]:
@@ -227,9 +234,19 @@ def rows_from_text_llm(text: str) -> tuple[list[RawPriceRow], list[str]]:
     text = (text or "").strip()
     if not text or not llm_available():
         return [], []
-    chunks = _chunk_text(text[:200_000])[: settings.llm_max_chunks]
+    # Символьный кап щедрый (1 млн ≈ 500 стр) — режем по чанкам, а не по символам.
+    all_chunks = _chunk_text(text[:1_000_000])
+    cap = max(1, settings.llm_max_chunks)
+    chunks = all_chunks[:cap]
     all_rows: list[RawPriceRow] = []
-    warnings: list[str] = [f"LLM-чанков: {len(chunks)}"]
+    warnings: list[str] = [f"LLM-чанков: {len(chunks)}" + (
+        f" из {len(all_chunks)}" if len(all_chunks) > len(chunks) else "")]
+    if len(all_chunks) > cap:
+        lost = 100 - cap * 100 // len(all_chunks)
+        warnings.append(
+            f"{TRUNCATED_MARK} текст: обработано {cap}/{len(all_chunks)} фрагментов "
+            f"(~{lost}% позиций пропущено). Подними MEDARCHIVE_LLM_MAX_CHUNKS."
+        )
     for ch in chunks:
         messages = [
             {"role": "system", "content": _SYSTEM_PROMPT + " Верни JSON вида {\"rows\":[...]}."},
@@ -261,10 +278,17 @@ def rows_from_pdf_images_llm(path: str) -> tuple[list[RawPriceRow], list[str]]:
     except Exception as exc:  # noqa: BLE001
         return [], [f"Не удалось открыть PDF для vision-OCR: {exc}"]
 
-    pages = min(len(doc), settings.llm_max_pages)
+    total_pages = len(doc)
+    pages = min(total_pages, settings.llm_max_pages)
     dpi = settings.vision_ocr_dpi
     all_rows: list[RawPriceRow] = []
     warnings: list[str] = [f"vision-OCR страниц: {pages} (DPI {dpi}, постранично)"]
+    if total_pages > pages:
+        lost = 100 - pages * 100 // total_pages
+        warnings.append(
+            f"{TRUNCATED_MARK} скан: распознано {pages}/{total_pages} страниц "
+            f"(~{lost}% потеряно). Подними MEDARCHIVE_LLM_MAX_PAGES."
+        )
     for i in range(pages):
         pix = doc[i].get_pixmap(dpi=dpi)
         b64 = base64.b64encode(pix.tobytes("png")).decode("ascii")
