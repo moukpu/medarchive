@@ -128,6 +128,11 @@ def rows_from_pdf_docling_remote(path: str, serve_url: str) -> tuple[list[RawPri
             chunk_rows, chunk_warnings = _send_single_pdf_remote(tmp_path, serve_url)
             all_rows.extend(chunk_rows)
             warnings.extend(chunk_warnings)
+            
+            # Fail fast: если сервер недоступен или отвалился по таймауту, не пытаемся слать следующие чанки!
+            if any("недоступен" in w for w in chunk_warnings):
+                warnings.append("Прерываем обработку остальных страниц из-за недоступности сервера.")
+                break
         finally:
             if os.path.exists(tmp_path):
                 try:

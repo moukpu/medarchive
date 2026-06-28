@@ -567,6 +567,7 @@ def _is_garbage_service_name(name: str) -> bool:
 def _build_rows(data: list[list[str]], cols: dict[str, int]) -> list[RawPriceRow]:
     service_col = cols.get("service")
     rows: list[RawPriceRow] = []
+    current_section = ""
     for row in data:
         cells = [str(c).strip() if c is not None else "" for c in row]
         if service_col is None or service_col >= len(cells):
@@ -578,12 +579,25 @@ def _build_rows(data: list[list[str]], cols: dict[str, int]) -> list[RawPriceRow
         pnr = _read_price(cells, cols.get("price_nonresident"))
         pgen = _read_price(cells, cols.get("price"))
         resident = pr if pr is not None else pgen
+        
         if resident is None and pnr is None:
-            continue  # строка без цены — пропускаем (заголовки секций и т.п.)
+            # строка без цены — возможно, заголовок секции!
+            # Если это осмысленный текст (и не слишком длинный абзац), запоминаем его.
+            if 3 < len(name) < 100 and not _is_garbage_service_name(name):
+                current_section = name
+            continue
+
         code = cells[cols["code"]] if cols.get("code") is not None and cols["code"] < len(cells) else None
         cur = detect_currency(" ".join(cells))
+        
+        # Предотвращаем потерю контекста для коротких названий (например "свинина", "ИФА")
+        final_name = name
+        if current_section and len(name) < 40 and name.lower() not in current_section.lower():
+            if len(name) < 15 or "панель" in current_section.lower() or "аллерг" in current_section.lower():
+                final_name = f"{current_section}: {name}"
+
         rows.append(RawPriceRow(
-            service_name_raw=name,
+            service_name_raw=final_name,
             price_resident=resident,
             price_nonresident=pnr,
             price_original=resident if resident is not None else pnr,
