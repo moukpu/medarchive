@@ -168,7 +168,7 @@ async def clear_database(session: AsyncSession = Depends(get_session)):
     from sqlalchemy import text
     try:
         # Для Postgres (быстрее, обнуляет счетчики, удаляет каскадно)
-        await session.execute(text("TRUNCATE TABLE price_items, price_documents, partners, services CASCADE;"))
+        await session.execute(text("TRUNCATE TABLE price_items, price_documents, partners CASCADE;"))
         await session.commit()
     except Exception:
         # Фоллбэк для SQLite (локальная разработка)
@@ -176,7 +176,6 @@ async def clear_database(session: AsyncSession = Depends(get_session)):
         await session.execute(text("DELETE FROM price_items;"))
         await session.execute(text("DELETE FROM price_documents;"))
         await session.execute(text("DELETE FROM partners;"))
-        await session.execute(text("DELETE FROM services;"))
         await session.commit()
         
     return {"status": "db_cleared"}
