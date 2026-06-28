@@ -147,15 +147,30 @@ def parse_price(value) -> float | None:
         return None
     if isinstance(value, (int, float)):
         return float(value)
-    s = str(value).strip()
+    s = str(value).strip().replace("\xa0", " ")
     if not s:
         return None
-    if _DATELIKE_RE.fullmatch(s.replace("\xa0", "").replace(" ", "")):
+    if _DATELIKE_RE.fullmatch(s.replace(" ", "")):
         return None  # это дата, а не цена
-    # убрать пробелы (в т.ч. неразрывные) и всё кроме цифр/разделителей
-    cleaned = re.sub(r"[^\d,.\-]", "", s.replace("\xa0", " ").replace(" ", ""))
-    if not re.search(r"\d", cleaned):
+
+    # Сначала склеиваем правильные тысячные разделители (пробел перед 3 цифрами).
+    # Делаем в цикле для обработки "1 250 000".
+    while True:
+        new_s = re.sub(r'(?<=\d)\s+(?=\d{3}(?!\d))', '', s)
+        if new_s == s:
+            break
+        s = new_s
+
+    # Очищаем от мусора, оставляем цифры, пробелы (между разными числами), точки, запятые, минусы
+    cleaned_with_spaces = re.sub(r"[^\d\s,.\-]", "", s).strip()
+    
+    parts = cleaned_with_spaces.split()
+    if not parts:
         return None
+    
+    # Берем первое найденное число (если их несколько, например "2500 2800", берем 2500)
+    cleaned = parts[0]
+    
     neg = cleaned.startswith("-")
     cleaned = cleaned.lstrip("-")
 
@@ -167,13 +182,18 @@ def parse_price(value) -> float | None:
     else:
         sep = "," if "," in cleaned else ("." if "." in cleaned else "")
         if sep:
-            parts = cleaned.split(sep)
-            if len(parts) > 2:
-                cleaned = "".join(parts)              # несколько разделителей → тысячные
-            elif len(parts[1]) == 3 and parts[0]:
-                cleaned = parts[0] + parts[1]          # «10.002» → 10002 (тысячный)
+            dot_parts = cleaned.split(sep)
+            if len(dot_parts) > 2:
+                # ВАЖНО: это тысячные разделители только если ВСЕ части кроме первой состоят ровно из 3 цифр.
+                # Иначе это код (например 250.028.003.200), не склеиваем его!
+                if all(len(p) == 3 for p in dot_parts[1:]):
+                    cleaned = "".join(dot_parts)
+                else:
+                    return None  # это не цена, а код
+            elif len(dot_parts[1]) == 3 and dot_parts[0]:
+                cleaned = dot_parts[0] + dot_parts[1]          # «10.002» → 10002 (тысячный)
             else:
-                cleaned = parts[0] + "." + parts[1]    # «10.50» → 10.5 (десятичный)
+                cleaned = dot_parts[0] + "." + dot_parts[1]    # «10.50» → 10.5 (десятичный)
     try:
         val = float(cleaned)
         return -val if neg else val

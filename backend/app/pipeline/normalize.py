@@ -26,7 +26,9 @@ from app.models import MatchMethod, Service
 
 
 def _norm(s: str) -> str:
-    return re.sub(r"\s+", " ", (s or "").strip().lower())
+    # Удаляем пунктуацию, оставляем только буквы, цифры и пробелы
+    s = re.sub(r"[^\w\s]", " ", (s or "").lower())
+    return re.sub(r"\s+", " ", s).strip()
 
 
 @dataclass
@@ -57,8 +59,9 @@ class CatalogIndex:
         services = res.scalars().all()
         emb_items: list[tuple[str, str]] = []
         for s in services:
-            idx.exact[_norm(s.service_name)] = s.service_id
-            idx.fuzzy_choices[s.service_id] = s.service_name
+            norm_name = _norm(s.service_name)
+            idx.exact[norm_name] = s.service_id
+            idx.fuzzy_choices[s.service_id] = norm_name
             emb_items.append((s.service_id, s.service_name))
             for syn in (s.synonyms or []):
                 idx.synonyms[_norm(syn)] = s.service_id
@@ -185,8 +188,8 @@ class CatalogIndex:
         # 2. синонимы
         if n in self.synonyms:
             return MatchResult(self.synonyms[n], 0.98, MatchMethod.synonym)
-        # 3. fuzzy
-        sid, score = best_fuzzy(raw_name, self.fuzzy_choices)
+        # 3. fuzzy (сравниваем нормализованную строку с нормализованными вариантами справочника)
+        sid, score = best_fuzzy(n, self.fuzzy_choices)
         best = MatchResult(sid, score, MatchMethod.fuzzy)
         # 4. эмбеддинги (prepare/llm_refine) — принимаем ТОЛЬКО при жёстком пороге
         # косинусного сходства: ниже порога «притянутые за уши» матчи отбрасываем.
@@ -199,8 +202,8 @@ class CatalogIndex:
                     and e_score >= settings.embedding_match_threshold
                     and e_score > score
                 ):
-                    best = MatchResult(e_sid, e_score, MatchMethod.embedding)
-        if best.service_id is None or best.score < settings.match_threshold:
-            # не дотянули до порога — оставляем предложение, но без авто-привязки
-            return MatchResult(None, best.score, MatchMethod.none)
-        return best
+                    return MatchResult(e_sid, e_score, MatchMethod.embedding)
+
+        if score >= settings.match_threshold:
+            return best
+        return MatchResult(None, 0.0, MatchMethod.none)

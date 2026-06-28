@@ -88,14 +88,29 @@ async def _auto_create_services(session: AsyncSession, log: list[str]) -> None:
     if not clusters:
         return
 
-    existing = await session.execute(select(Service.service_name).where(Service.is_active.is_(True)))
-    existing_norms = {_norm(r[0]) for r in existing.all()}
+    existing = await session.execute(select(Service.service_id, Service.service_name).where(Service.is_active.is_(True)))
+    existing_norms = {_norm(r[1]): r[0] for r in existing.all()}
 
     created = 0
     linked = 0
     for cluster in clusters:
         norm_name = _norm(cluster.display_name)
-        if not norm_name or norm_name in existing_norms:
+        if not norm_name:
+            continue
+            
+        svc_id = existing_norms.get(norm_name)
+        if svc_id:
+            # Услуга уже существует (возможно, авто-создана из предыдущего документа в этом же батче),
+            # индекс про это еще не знает. Привязываем эти повторения к ней, а не оставляем висеть!
+            items_res = await session.execute(
+                select(PriceItem).where(PriceItem.item_id.in_(cluster.item_ids))
+            )
+            for item in items_res.scalars():
+                item.service_id = svc_id
+                item.match_method = MatchMethod.exact
+                item.match_score = 1.0
+                item.needs_review = True
+            linked += len(cluster.item_ids)
             continue
 
         svc = Service(
@@ -115,7 +130,7 @@ async def _auto_create_services(session: AsyncSession, log: list[str]) -> None:
             item.match_method = MatchMethod.fuzzy if len(cluster.variants) > 1 else MatchMethod.exact
             item.match_score = cluster.cohesion
             item.needs_review = True  # авто-кластер всё равно требует подтверждения оператора
-        existing_norms.add(norm_name)
+        existing_norms[norm_name] = svc.service_id
         created += 1
         linked += len(cluster.item_ids)
 
