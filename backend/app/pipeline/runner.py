@@ -7,8 +7,6 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from collections import Counter
-
 from app.config import settings
 from app.db import SessionLocal
 from app.extractors.router import get_extractor
@@ -20,10 +18,11 @@ from app.models import (
     PriceItem,
     Service,
 )
+from app.pipeline.autocreate import cluster_unmatched
 from app.pipeline.normalize import CatalogIndex, _norm
 from app.pipeline.validate import validate_row
 
-AUTO_CREATE_MIN_COUNT = 2
+AUTO_CREATE_MIN_COUNT = 3
 
 
 def _looks_low_quality(rows) -> bool:
@@ -70,57 +69,58 @@ async def _prev_resident(session: AsyncSession, partner_id: str, service_name_ra
 
 
 async def _auto_create_services(session: AsyncSession, log: list[str]) -> None:
-    """Auto-create Service entries for unmatched names that appear >= AUTO_CREATE_MIN_COUNT times."""
+    """Авто-создание услуг справочника из кластеров несопоставленных позиций.
+
+    Кластеризация по fuzzy-схожести (не только точное совпадение нормализованного
+    имени) — "Генетический тест на предрасположенность" и "Генетическое тестирование"
+    попадут в один кластер. Кластеры размера >= AUTO_CREATE_MIN_COUNT становятся
+    новой услугой; остальные остаются в очереди ручной верификации (см. unmatched.py).
+    """
     res = await session.execute(
-        select(PriceItem.service_name_raw)
+        select(PriceItem.item_id, PriceItem.service_name_raw)
         .where(PriceItem.is_active.is_(True), PriceItem.service_id.is_(None))
     )
-    unmatched_names = [r[0] for r in res.all() if r[0]]
+    unmatched = [(r[0], r[1]) for r in res.all() if r[1]]
+    if not unmatched:
+        return
 
-    counts: Counter[str] = Counter()
-    norm_to_raw: dict[str, str] = {}
-    for name in unmatched_names:
-        n = _norm(name)
-        if n:
-            counts[n] += 1
-            if n not in norm_to_raw:
-                norm_to_raw[n] = name
+    clusters = [c for c in cluster_unmatched(unmatched) if len(c.item_ids) >= AUTO_CREATE_MIN_COUNT]
+    if not clusters:
+        return
 
     existing = await session.execute(select(Service.service_name).where(Service.is_active.is_(True)))
     existing_norms = {_norm(r[0]) for r in existing.all()}
 
     created = 0
-    for norm_name, count in counts.items():
-        if count < AUTO_CREATE_MIN_COUNT:
-            continue
-        if norm_name in existing_norms:
+    linked = 0
+    for cluster in clusters:
+        norm_name = _norm(cluster.display_name)
+        if not norm_name or norm_name in existing_norms:
             continue
 
-        display_name = norm_to_raw[norm_name]
-        title = display_name[0].upper() + display_name[1:] if display_name else display_name
-        svc = Service(service_name=title, is_active=True)
+        svc = Service(
+            service_name=cluster.display_name,
+            synonyms=[v for v in cluster.variants if v != cluster.display_name][:10],
+            category=cluster.category,
+            is_active=True,
+        )
         session.add(svc)
         await session.flush()
 
         items_res = await session.execute(
-            select(PriceItem).where(
-                PriceItem.is_active.is_(True),
-                PriceItem.service_id.is_(None),
-                PriceItem.service_name_raw.in_(
-                    [n for n in unmatched_names if _norm(n) == norm_name]
-                ),
-            )
+            select(PriceItem).where(PriceItem.item_id.in_(cluster.item_ids))
         )
         for item in items_res.scalars():
             item.service_id = svc.service_id
-            item.match_method = MatchMethod.exact
-            item.match_score = 1.0
-            item.needs_review = False
+            item.match_method = MatchMethod.fuzzy if len(cluster.variants) > 1 else MatchMethod.exact
+            item.match_score = cluster.cohesion
+            item.needs_review = True  # авто-кластер всё равно требует подтверждения оператора
         existing_norms.add(norm_name)
         created += 1
+        linked += len(cluster.item_ids)
 
     if created:
-        log.append(f"Авто-создано {created} услуг справочника из частых несопоставленных позиций")
+        log.append(f"Авто-создано {created} услуг справочника из {linked} несопоставленных позиций (кластеризация)")
         await session.commit()
 
 

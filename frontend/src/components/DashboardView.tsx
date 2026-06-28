@@ -21,7 +21,7 @@ import {
   DotsThreeVertical,
 } from "@phosphor-icons/react";
 import { api, type DocumentStatus } from "../api";
-import { Card, StatusPill, Spinner, Input, Button } from "./ui";
+import { Card, StatusPill, Spinner, Input, Button, ConfirmDialog } from "./ui";
 import type { Tab } from "../types";
 import { formatDate } from "../format";
 
@@ -78,6 +78,7 @@ export function DashboardView({ onNavigate }: { onNavigate?: (t: Tab) => void })
   const [batch, setBatch] = useState<DocumentStatus[] | null>(null);
   const [filter, setFilter] = useState<DocFilter>("all");
   const [search, setSearch] = useState("");
+  const [confirmClear, setConfirmClear] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: d, refetch: load } = useQuery({
@@ -85,7 +86,7 @@ export function DashboardView({ onNavigate }: { onNavigate?: (t: Tab) => void })
     queryFn: () => api.dashboard(),
   });
 
-  const { data: allStatuses } = useQuery({
+  const { data: allStatuses, refetch: loadStatuses } = useQuery({
     queryKey: ["status"],
     queryFn: () => api.status(),
     refetchInterval: (query) => {
@@ -99,7 +100,6 @@ export function DashboardView({ onNavigate }: { onNavigate?: (t: Tab) => void })
       }
       return 1500;
     },
-    enabled: !!batch && batch.some((x) => !TERMINAL.has(x.parse_status)),
   });
 
   useEffect(() => {
@@ -151,14 +151,18 @@ export function DashboardView({ onNavigate }: { onNavigate?: (t: Tab) => void })
   };
 
   const onClearDb = async () => {
-    if (!window.confirm("Удалить все документы, услуги, прайсы и партнёров?")) return;
+    setConfirmClear(false);
     setUploading(true);
+    setError(false);
     try {
       await api.clearDb();
-      window.alert("База данных очищена.");
-      window.location.reload();
+      setMsg("База данных очищена.");
+      setBatch(null);
+      load();
+      loadStatuses();
     } catch (e) {
-      window.alert("Ошибка очистки: " + e);
+      setError(true);
+      setMsg("Ошибка очистки: " + e);
     } finally {
       setUploading(false);
     }
@@ -390,7 +394,7 @@ export function DashboardView({ onNavigate }: { onNavigate?: (t: Tab) => void })
           <div className="flex items-center justify-between border-t border-border-subtle px-5 py-3 text-xs text-ink-faint">
             <span>Показано {filtered.length} из {docs.length}</span>
             <button
-              onClick={onClearDb}
+              onClick={() => setConfirmClear(true)}
               disabled={uploading}
               className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-surface-white px-3 py-1.5 text-xs font-semibold text-danger-700 transition-colors hover:bg-danger-50 disabled:opacity-50"
             >
@@ -399,6 +403,16 @@ export function DashboardView({ onNavigate }: { onNavigate?: (t: Tab) => void })
           </div>
         </Card>
       </section>
+
+      <ConfirmDialog
+        open={confirmClear}
+        title="Очистить базу данных?"
+        description="Будут удалены все документы, услуги, прайсы и партнёры. Действие необратимо."
+        confirmLabel="Удалить всё"
+        danger
+        onConfirm={onClearDb}
+        onCancel={() => setConfirmClear(false)}
+      />
     </div>
   );
 }
