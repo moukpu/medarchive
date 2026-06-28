@@ -84,22 +84,13 @@ export function DashboardView({ onNavigate }: { onNavigate?: (t: Tab) => void })
   const { data: d, refetch: load } = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api.dashboard(),
+    refetchInterval: 2000,
   });
 
   const { data: allStatuses, refetch: loadStatuses } = useQuery({
     queryKey: ["status"],
     queryFn: () => api.status(),
-    refetchInterval: (query) => {
-      const statuses = query.state.data;
-      if (!statuses || !batch) return false;
-      const ids = new Set(batch.map((x) => x.doc_id));
-      const mine = statuses.filter((x) => ids.has(x.doc_id));
-      if (mine.length === batch.length && mine.every((x) => TERMINAL.has(x.parse_status))) {
-        load();
-        return false;
-      }
-      return 1500;
-    },
+    refetchInterval: 2000,
   });
 
   useEffect(() => {
