@@ -272,8 +272,16 @@ def _infer_columns_by_content(
         text_frac[col] = sum(_is_text_cell(v) for v in vals) / len(vals)
         num_frac[col] = sum(_is_num_cell(v) for v in vals) / len(vals)
 
-    # «услуга» — самая текстовая колонка, где текст уверенно преобладает над числами
-    service_col = max(range(ncols), key=lambda c: text_frac[c])
+    def service_score(col: int) -> tuple[float, float, float]:
+        vals = [r[col].strip() for r in sample_rows if col < len(r) and r[col].strip()]
+        if not vals:
+            return (0.0, 0.0, 0.0)
+        avg_len = sum(len(v) for v in vals) / len(vals)
+        unique_ratio = len(set(vals)) / len(vals)
+        return (text_frac[col], unique_ratio, avg_len)
+
+    # «услуга» — самая текстовая колонка. При равенстве выигрывает более разнообразная и длинная (реальные названия)
+    service_col = max(range(ncols), key=service_score)
     if text_frac[service_col] < 0.7 or text_frac[service_col] <= num_frac[service_col]:
         return None
     # «цена» — самая числовая из ОСТАЛЬНЫХ, где числа преобладают над текстом
@@ -696,6 +704,22 @@ def _sanity_check_prices(
             "названий — мусор (числа/коды/метаданные) → сброс."
         )
         return [], warnings
+
+    # --- Эшелон 6: дубликаты названий (выбрана неверная колонка) ---
+    if len(rows) >= 10:
+        from collections import Counter
+        names = [r.service_name_raw.strip() for r in rows if r.service_name_raw]
+        if names:
+            name_freq = Counter(names)
+            most_common_name, count = name_freq.most_common(1)[0]
+            unique_ratio = len(name_freq) / len(names)
+            # Если уникальных названий слишком мало (<30%), или самое частое повторяется >30% раз
+            if unique_ratio < 0.3 or (count >= 5 and count / len(names) > 0.3):
+                warnings.append(
+                    f"Sanity check [дубликаты имен]: слишком много одинаковых названий "
+                    f"('{most_common_name}' x{count}, уникальных {unique_ratio:.0%}) → сброс."
+                )
+                return [], warnings
 
     return rows, warnings
 
