@@ -9,35 +9,35 @@ export function Card({
   children,
   className = "",
   padded = true,
-  glass = false,
+  interactive = false,
   ...rest
 }: {
   children: ReactNode;
   className?: string;
   padded?: boolean;
-  glass?: boolean;
+  interactive?: boolean;
 } & React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        "rounded-xl border border-line bg-surface shadow-card transition-shadow duration-200",
-        glass && "glass-panel",
-        padded && "p-5",
+        "rounded-xl border border-border-subtle bg-surface-white card-elev-1",
+        interactive && "hover-lift cursor-pointer",
+        padded && "p-6",
         className
       )}
       {...rest}
     >
-      {glass ? <div className="relative z-10">{children}</div> : children}
+      {children}
     </div>
   );
 }
 
-// старый словарь вариантов проекта -> канонические варианты shadcn Button
 const VARIANT_MAP = {
   primary: "default",
   secondary: "secondary",
   ghost: "ghost",
   danger: "destructive",
+  outline: "outline",
 } as const;
 const SIZE_MAP = { sm: "sm", md: "default", lg: "lg" } as const;
 
@@ -79,16 +79,27 @@ export function Badge({
   );
 }
 
+export function StatusPill({ tone, children }: { tone: "success" | "warning" | "danger" | "neutral" | "primary"; children: ReactNode }) {
+  const toneClass = {
+    success: "bg-success-50 text-success-600",
+    warning: "bg-warning-50 text-warning-600",
+    danger: "bg-danger-50 text-danger-700",
+    neutral: "bg-surface-low text-ink-muted",
+    primary: "bg-primary-50 text-primary-700",
+  }[tone];
+  return <span className={cn("status-pill", toneClass)}>{children}</span>;
+}
+
 export function EmptyState({ icon, title, description, action }: { icon?: ReactNode; title: string; description?: string; action?: ReactNode }) {
   return (
-    <div className="animate-fade-in-up flex flex-col items-center justify-center rounded-xl border border-dashed border-line-strong bg-surface/50 px-6 py-16 text-center">
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border-strong bg-surface-white px-6 py-16 text-center">
       {icon && (
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500/20 to-accent-500/10 text-primary-300 ring-1 ring-white/10 shadow-[0_0_24px_0_rgb(124_92_255_/_0.15)]">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-surface-low text-brand-red">
           {icon}
         </div>
       )}
-      <p className="text-sm font-semibold text-ink">{title}</p>
-      {description && <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-ink-muted">{description}</p>}
+      <p className="text-base font-semibold text-ink-strong">{title}</p>
+      {description && <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-ink-faint">{description}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
   );
@@ -97,7 +108,7 @@ export function EmptyState({ icon, title, description, action }: { icon?: ReactN
 export function Spinner({ size = 18, className = "" }: { size?: number; className?: string }) {
   return (
     <svg
-      className={`animate-spin-slow ${className}`}
+      className={cn("animate-spin-slow", className)}
       width={size}
       height={size}
       viewBox="0 0 24 24"
@@ -122,8 +133,8 @@ export function LoadingBlock({ label = "Загрузка…" }: { label?: string
 
 export function SkeletonRow() {
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-line bg-surface/60 p-4">
-      <div className="skeleton-shimmer h-10 w-10 shrink-0 rounded-xl" />
+    <div className="flex items-center gap-4 rounded-xl border border-border-subtle bg-surface-white p-4 card-elev-1">
+      <div className="skeleton-shimmer h-10 w-10 shrink-0 rounded-lg" />
       <div className="flex-1 space-y-2.5">
         <div className="skeleton-shimmer h-3 w-2/5 rounded-md" />
         <div className="skeleton-shimmer h-3 w-1/4 rounded-md" />
@@ -139,11 +150,20 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
 
 export function PageHeader({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
   return (
-    <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-ink">{title}</h1>
-        {description && <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">{description}</p>}
+        <h1 className="text-[28px] font-bold leading-tight tracking-tight text-ink-strong">{title}</h1>
+        {description && <p className="mt-2 text-[15px] leading-relaxed text-ink-faint max-w-2xl">{description}</p>}
       </div>
+      {action}
+    </div>
+  );
+}
+
+export function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <h2 className="text-xl font-semibold tracking-tight text-ink-strong">{children}</h2>
       {action}
     </div>
   );

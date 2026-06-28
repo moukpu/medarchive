@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   CheckCircle,
   ClipboardText,
@@ -9,6 +9,8 @@ import {
   Buildings,
   CalendarBlank,
   X,
+  MagnifyingGlass,
+  Eye,
 } from "@phosphor-icons/react";
 import { api, type ReviewItem, type ItemContext, type Service } from "../api";
 import { Badge, Button, Card, EmptyState, Input, PageHeader, SkeletonRow, Spinner } from "./ui";
@@ -17,6 +19,116 @@ import { formatKzt, formatDate } from "../format";
 const METHOD_LABEL: Record<string, string> = {
   exact: "точное", synonym: "синоним", fuzzy: "нечёткое", embedding: "семантика", manual: "вручную", none: "—",
 };
+
+const PARSE_ERROR_KEYWORDS = [
+  "parse", "extract", "ошибка", "не удалось", "не распознан", "формат", "encoding",
+  "corrupted", "invalid", "timeout", "failed", "unreadable", "нечитаем",
+];
+
+function hasParseIssue(item: ReviewItem): boolean {
+  return item.reasons.some((r) => {
+    const low = r.toLowerCase();
+    return PARSE_ERROR_KEYWORDS.some((kw) => low.includes(kw));
+  });
+}
+
+function ServiceSearchSelect({
+  value,
+  onChange,
+  suggestions,
+}: {
+  value: string | undefined;
+  onChange: (id: string | undefined) => void;
+  suggestions: Service[];
+}) {
+  const [allServices, setAllServices] = useState<Service[]>([]);
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    api.services().then(setAllServices).catch(() => {});
+  }, []);
+
+  const filtered = useMemo(() => {
+    const term = search.toLowerCase().trim();
+    if (!term) return allServices.slice(0, 50);
+    return allServices.filter((s) => s.service_name.toLowerCase().includes(term)).slice(0, 50);
+  }, [allServices, search]);
+
+  const selectedName = allServices.find((s) => s.service_id === value)?.service_name
+    ?? suggestions.find((s) => s.service_id === value)?.service_name;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full cursor-pointer items-center justify-between rounded-md border border-border-subtle bg-surface-white px-3 py-2 text-left text-sm text-ink focus:border-primary-500 focus:outline-none"
+      >
+        <span className={value ? "text-ink" : "text-ink-faint"}>
+          {selectedName || "— выберите услугу —"}
+        </span>
+        <MagnifyingGlass size={14} className="text-ink-faint" />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 right-0 top-full z-20 mt-1 rounded-lg border border-border-subtle bg-surface-white shadow-lg">
+          <div className="border-b border-border-subtle p-2">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Поиск по справочнику…"
+              autoFocus
+              className="text-sm"
+            />
+          </div>
+          <div className="max-h-60 overflow-y-auto p-1">
+            <button
+              onClick={() => { onChange(undefined); setOpen(false); }}
+              className="w-full cursor-pointer rounded px-3 py-2 text-left text-sm text-ink-faint hover:bg-surface-low"
+            >
+              — оставить как есть —
+            </button>
+            {suggestions.length > 0 && (
+              <>
+                <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Предложения</p>
+                {suggestions.map((s) => (
+                  <button
+                    key={s.service_id}
+                    onClick={() => { onChange(s.service_id); setOpen(false); }}
+                    className={`w-full cursor-pointer rounded px-3 py-2 text-left text-sm transition-colors hover:bg-primary-50 hover:text-primary-700 ${
+                      value === s.service_id ? "bg-primary-50 font-medium text-primary-700" : "text-ink"
+                    }`}
+                  >
+                    {s.service_name}
+                    {s.category && <span className="ml-2 text-xs text-ink-faint">({s.category})</span>}
+                  </button>
+                ))}
+                <div className="mx-3 my-1 border-t border-border-subtle" />
+              </>
+            )}
+            <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Все услуги</p>
+            {filtered.length === 0 && (
+              <p className="px-3 py-2 text-sm text-ink-faint">Ничего не найдено</p>
+            )}
+            {filtered.map((s) => (
+              <button
+                key={s.service_id}
+                onClick={() => { onChange(s.service_id); setOpen(false); }}
+                className={`w-full cursor-pointer rounded px-3 py-2 text-left text-sm transition-colors hover:bg-primary-50 hover:text-primary-700 ${
+                  value === s.service_id ? "bg-primary-50 font-medium text-primary-700" : "text-ink"
+                }`}
+              >
+                {s.service_name}
+                {s.category && <span className="ml-2 text-xs text-ink-faint">({s.category})</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ReviewCard({ item, onResolved }: { item: ReviewItem; onResolved: (id: string) => void }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
@@ -29,6 +141,15 @@ function ReviewCard({ item, onResolved }: { item: ReviewItem; onResolved: (id: s
   const [resident, setResident] = useState(item.price_resident_kzt?.toString() ?? "");
   const [nonresident, setNonresident] = useState(item.price_nonresident_kzt?.toString() ?? "");
   const [note, setNote] = useState("");
+
+  const isParseIssue = hasParseIssue(item);
+
+  useEffect(() => {
+    if (isParseIssue) {
+      setShowCtx(true);
+      api.itemContext(item.item_id).then(setCtx).catch(() => {});
+    }
+  }, [item.item_id, isParseIssue]);
 
   const toggleCtx = async () => {
     const next = !showCtx;
@@ -80,7 +201,6 @@ function ReviewCard({ item, onResolved }: { item: ReviewItem; onResolved: (id: s
 
   return (
     <Card className="animate-fade-in">
-      {/* Заголовок: сырое название + матч/score */}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -111,7 +231,6 @@ function ReviewCard({ item, onResolved }: { item: ReviewItem; onResolved: (id: s
         </div>
       </div>
 
-      {/* Причины ревью */}
       {item.reasons.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {item.reasons.map((r, i) => (
@@ -120,13 +239,33 @@ function ReviewCard({ item, onResolved }: { item: ReviewItem; onResolved: (id: s
         </div>
       )}
 
-      {/* Текущие цены */}
       <div className="mt-3 flex gap-5 text-sm">
         <span className="text-ink-muted">Резидент: <b className="text-ink">{formatKzt(item.price_resident_kzt)}</b></span>
         <span className="text-ink-muted">Нерезидент: <b className="text-ink">{formatKzt(item.price_nonresident_kzt)}</b></span>
       </div>
 
-      {/* Быстрые предложения для несопоставленных */}
+      {isParseIssue && showCtx && (
+        <div className="mt-4 rounded-lg border-2 border-amber-200 bg-amber-50/50 p-4 text-sm">
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-amber-700">
+            <Eye size={14} /> Исходный документ — проблема при извлечении
+          </div>
+          {!ctx ? (
+            <span className="flex items-center gap-2 text-ink-muted"><Spinner size={14} /> Загружаем…</span>
+          ) : (
+            <div className="space-y-2">
+              {ctx.file_name && <p className="text-xs text-ink-faint">Файл: {ctx.file_name}</p>}
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-surface-white p-3 text-xs text-ink border border-border-subtle">{ctx.raw_snippet || "Фрагмент не найден."}</pre>
+              {ctx.parse_log && (
+                <details className="text-xs text-ink-muted">
+                  <summary className="cursor-pointer font-medium">Лог обработки</summary>
+                  <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-surface-white p-3">{ctx.parse_log}</pre>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {mode === "view" && item.suggestions.length > 0 && (
         <div className="mt-3">
           <p className="mb-1.5 text-xs font-medium text-ink-faint">Предложения справочника:</p>
@@ -136,7 +275,7 @@ function ReviewCard({ item, onResolved }: { item: ReviewItem; onResolved: (id: s
                 key={s.service_id}
                 onClick={() => quickMatch(s)}
                 disabled={busy}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-primary-500/25 bg-primary-500/10 px-3 py-1.5 text-sm font-medium text-primary-300 transition-colors duration-150 hover:bg-primary-500/20 hover:text-primary-200 disabled:cursor-wait disabled:opacity-60"
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-primary-100 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-700 transition-colors duration-150 hover:bg-primary-100 hover:text-primary-900 disabled:cursor-wait disabled:opacity-60"
               >
                 <CheckCircle size={15} weight="fill" /> {s.service_name}
               </button>
@@ -145,21 +284,15 @@ function ReviewCard({ item, onResolved }: { item: ReviewItem; onResolved: (id: s
         </div>
       )}
 
-      {/* Редактор */}
       {mode === "edit" && (
-        <div className="mt-4 space-y-3 rounded-lg border border-line bg-canvas/50 p-4">
+        <div className="mt-4 space-y-3 rounded-lg border border-border-subtle bg-surface-white-low/60 p-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-muted">Услуга справочника</label>
-            <select
-              value={serviceId ?? ""}
-              onChange={(e) => setServiceId(e.target.value || undefined)}
-              className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-primary-400 focus:outline-none"
-            >
-              <option value="">— оставить как есть —</option>
-              {item.suggestions.map((s) => (
-                <option key={s.service_id} value={s.service_id}>{s.service_name}</option>
-              ))}
-            </select>
+            <ServiceSearchSelect
+              value={serviceId}
+              onChange={setServiceId}
+              suggestions={item.suggestions}
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -186,19 +319,18 @@ function ReviewCard({ item, onResolved }: { item: ReviewItem; onResolved: (id: s
         </div>
       )}
 
-      {/* Контекст из файла */}
-      {showCtx && (
-        <div className="mt-4 rounded-lg border border-line bg-canvas/50 p-4 text-sm">
+      {!isParseIssue && showCtx && (
+        <div className="mt-4 rounded-lg border border-border-subtle bg-surface-white-low/60 p-4 text-sm">
           {ctxLoading ? (
             <span className="flex items-center gap-2 text-ink-muted"><Spinner size={14} /> Загружаем исходник…</span>
           ) : ctx ? (
             <div className="space-y-2">
               <p className="text-xs text-ink-faint">Фрагмент исходного документа{ctx.file_name ? ` · ${ctx.file_name}` : ""}:</p>
-              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-surface p-3 text-xs text-ink">{ctx.raw_snippet || "Фрагмент не найден."}</pre>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-surface-white p-3 text-xs text-ink">{ctx.raw_snippet || "Фрагмент не найден."}</pre>
               {ctx.parse_log && (
                 <details className="text-xs text-ink-muted">
                   <summary className="cursor-pointer">Лог обработки</summary>
-                  <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-surface p-3">{ctx.parse_log}</pre>
+                  <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-surface-white p-3">{ctx.parse_log}</pre>
                 </details>
               )}
             </div>
@@ -208,18 +340,19 @@ function ReviewCard({ item, onResolved }: { item: ReviewItem; onResolved: (id: s
         </div>
       )}
 
-      {/* Действия */}
       {mode === "view" && (
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-3">
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-border-subtle pt-3">
           <Button size="sm" onClick={approve} disabled={busy} icon={busy ? <Spinner size={14} /> : <SealCheck size={15} />}>
             Утвердить
           </Button>
           <Button size="sm" variant="secondary" onClick={() => setMode("edit")} disabled={busy} icon={<PencilSimple size={15} />}>
             Редактировать
           </Button>
-          <Button size="sm" variant="ghost" onClick={toggleCtx} disabled={busy} icon={<FileText size={15} />}>
-            {showCtx ? "Скрыть исходник" : "Показать в файле"}
-          </Button>
+          {!isParseIssue && (
+            <Button size="sm" variant="ghost" onClick={toggleCtx} disabled={busy} icon={<FileText size={15} />}>
+              {showCtx ? "Скрыть исходник" : "Показать в файле"}
+            </Button>
+          )}
         </div>
       )}
     </Card>

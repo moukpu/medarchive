@@ -1,158 +1,172 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
 import {
+  Gauge,
   MagnifyingGlass,
   Buildings,
   ClipboardText,
-  ChartBar,
+  ChartLineUp,
   List as ListIcon,
   X,
 } from "@phosphor-icons/react";
 import type { Tab } from "../types";
 
-const NAV: { id: Tab; label: string; icon: typeof MagnifyingGlass; description: string }[] = [
-  { id: "search", label: "Поиск услуги", icon: MagnifyingGlass, description: "Кто оказывает и по какой цене" },
-  { id: "partners", label: "Партнёры", icon: Buildings, description: "Клиники и их прайс-листы" },
-  { id: "verify", label: "Верификация", icon: ClipboardText, description: "Очередь несопоставленных позиций" },
-  { id: "dashboard", label: "Дашборд", icon: ChartBar, description: "Качество обработки и загрузка архива" },
+const NAV: { id: Tab; label: string; icon: typeof Gauge }[] = [
+  { id: "dashboard", label: "Дашборд", icon: Gauge },
+  { id: "search", label: "Поиск услуги", icon: MagnifyingGlass },
+  { id: "partners", label: "Партнёры", icon: Buildings },
+  { id: "verify", label: "Верификация", icon: ClipboardText },
+  { id: "reports", label: "Отчёты", icon: ChartLineUp },
 ];
 
 export function Layout({ tab, onTabChange, children }: { tab: Tab; onTabChange: (t: Tab) => void; children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const active = NAV.find((n) => n.id === tab)!;
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden lg:flex">
-      <AmbientBackground />
+    <div className="flex min-h-screen flex-col bg-surface text-ink">
+      <TopNav tab={tab} onTabChange={onTabChange} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
 
-      {/* Mobile top bar */}
-      <header className="glass-panel relative z-30 flex items-center justify-between rounded-none border-0 border-b px-4 py-3 lg:hidden">
-        <Brand compact />
-        <button
-          aria-label={mobileOpen ? "Закрыть меню" : "Открыть меню"}
-          onClick={() => setMobileOpen((v) => !v)}
-          className="relative z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-ink-muted transition-transform duration-150 hover:bg-canvas active:scale-90"
-        >
-          {mobileOpen ? <X size={22} /> : <ListIcon size={22} />}
-        </button>
-      </header>
+      <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-8 sm:px-8 lg:px-16">
+        <div key={tab} className="animate-fade-in-up">
+          {children}
+        </div>
+      </main>
+
+      <Footer />
+    </div>
+  );
+}
+
+function TopNav({
+  tab,
+  onTabChange,
+  mobileOpen,
+  setMobileOpen,
+}: {
+  tab: Tab;
+  onTabChange: (t: Tab) => void;
+  mobileOpen: boolean;
+  setMobileOpen: (v: boolean) => void;
+}) {
+  return (
+    <header className="sticky top-0 z-50 w-full border-b border-border-subtle bg-surface-white/95 backdrop-blur supports-[backdrop-filter]:bg-surface-white/80">
+      <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between gap-6 px-4 sm:px-8 lg:px-16">
+        <Brand />
+
+        <nav className="hidden h-full items-center gap-1 md:flex" aria-label="Основная навигация">
+          {NAV.map((item) => {
+            const isActive = item.id === tab;
+            return (
+              <button
+                key={item.id}
+                onClick={() => onTabChange(item.id)}
+                aria-current={isActive ? "page" : undefined}
+                className={`relative flex h-16 items-center gap-2 px-4 text-sm font-semibold transition-colors duration-150 ${
+                  isActive
+                    ? "text-brand-red"
+                    : "text-ink-muted hover:text-ink-strong"
+                }`}
+              >
+                <span>{item.label}</span>
+                {isActive && (
+                  <span
+                    className="absolute inset-x-3 -bottom-px h-[3px] rounded-t-full bg-brand-red"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="flex items-center gap-3">
+          <span className="hidden text-xs font-medium text-ink-faint lg:block">+7 (700) 000-00-00</span>
+          <button
+            aria-label={mobileOpen ? "Закрыть меню" : "Открыть меню"}
+            onClick={() => setMobileOpen(!mobileOpen)}
+            className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-ink-muted hover:bg-surface-low md:hidden"
+          >
+            {mobileOpen ? <X size={20} /> : <ListIcon size={20} />}
+          </button>
+        </div>
+      </div>
 
       {mobileOpen && (
-        <div
-          className="animate-fade-in fixed inset-0 z-40 bg-black/30 lg:hidden"
-          onClick={() => setMobileOpen(false)}
-          aria-hidden="true"
-        />
+        <nav className="border-t border-border-subtle bg-surface-white px-4 py-3 md:hidden" aria-label="Мобильная навигация">
+          {NAV.map((item) => {
+            const isActive = item.id === tab;
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  onTabChange(item.id);
+                  setMobileOpen(false);
+                }}
+                aria-current={isActive ? "page" : undefined}
+                className={`flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors ${
+                  isActive ? "bg-surface-low text-brand-red" : "text-ink-muted hover:bg-surface-low hover:text-ink-strong"
+                }`}
+              >
+                <Icon size={18} weight={isActive ? "fill" : "regular"} />
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
       )}
-
-      {/* Sidebar */}
-      <aside
-        className={`glass-panel fixed inset-y-0 left-0 z-50 w-72 shrink-0 rounded-none border-0 border-r transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:static lg:translate-x-0 ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="relative z-10 flex h-full flex-col px-4 py-6">
-          <div className="hidden px-2 lg:block">
-            <Brand />
-          </div>
-          <button
-            aria-label="Закрыть меню"
-            onClick={() => setMobileOpen(false)}
-            className="absolute right-3 top-3 flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg text-ink-muted transition-transform duration-150 hover:bg-canvas active:scale-90 lg:hidden"
-          >
-            <X size={20} />
-          </button>
-
-          <nav className="mt-6 flex flex-1 flex-col gap-1" aria-label="Основная навигация">
-            {NAV.map((item) => {
-              const isActive = item.id === tab;
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    onTabChange(item.id);
-                    setMobileOpen(false);
-                  }}
-                  aria-current={isActive ? "page" : undefined}
-                  className={`group relative flex w-full cursor-pointer items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
-                    isActive ? "text-primary-200" : "text-ink-muted hover:bg-white/[0.05] hover:text-ink"
-                  }`}
-                >
-                  {isActive && (
-                    <span className="animate-fade-in absolute inset-0 rounded-xl bg-gradient-to-r from-primary-500/20 to-primary-500/5 ring-1 ring-inset ring-primary-500/25" aria-hidden="true" />
-                  )}
-                  {isActive && (
-                    <span
-                      className="animate-fade-in absolute inset-y-2 left-0 w-[3px] rounded-full bg-primary-400 shadow-[0_0_10px_2px_rgb(124_92_255_/_0.55)]"
-                      aria-hidden="true"
-                    />
-                  )}
-                  <Icon
-                    size={19}
-                    weight={isActive ? "fill" : "regular"}
-                    className={`relative z-10 shrink-0 transition-transform duration-200 group-hover:scale-110 ${
-                      isActive ? "text-primary-300" : "text-ink-faint group-hover:text-ink-muted"
-                    }`}
-                  />
-                  <div className="relative z-10 min-w-0">
-                    <p className="leading-tight">{item.label}</p>
-                    {isActive && <p className="mt-0.5 text-[11px] font-normal leading-tight text-primary-400/70">{item.description}</p>}
-                  </div>
-                </button>
-              );
-            })}
-          </nav>
-
-          <div className="mt-auto rounded-xl border border-white/[0.06] bg-white/[0.03] px-3.5 py-3.5 text-xs text-ink-muted ring-1 ring-inset ring-white/[0.04]">
-            <p className="font-semibold text-ink">MedPartners · Кейс 2</p>
-            <p className="mt-1 leading-relaxed">Автоматическая обработка архива прайс-листов клиник</p>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main content */}
-      <div className="relative z-10 flex-1">
-        <header className="glass-panel relative z-20 hidden rounded-none border-0 border-b px-8 py-4 lg:flex lg:items-center lg:gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-500/15 text-primary-400 ring-1 ring-primary-500/20">
-            {(() => { const Icon = active.icon; return <Icon size={16} weight="fill" />; })()}
-          </div>
-          <div className="relative z-10">
-            <p className="text-sm font-semibold text-ink">{active.label}</p>
-            <p className="text-xs text-ink-faint">{active.description}</p>
-          </div>
-        </header>
-        <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <div key={tab} className="animate-fade-in-up mx-auto max-w-6xl">
-            {children}
-          </div>
-        </main>
-      </div>
-    </div>
+    </header>
   );
 }
 
-function AmbientBackground() {
-  return (
-    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
-      <div className="ambient-blob -left-24 -top-24 h-96 w-96 bg-primary-300/60" />
-      <div className="ambient-blob right-[-8rem] top-1/3 h-[28rem] w-[28rem] bg-accent-500/50" />
-    </div>
-  );
-}
-
-function Brand({ compact = false }: { compact?: boolean }) {
+function Brand() {
   return (
     <div className="flex items-center gap-2.5">
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-600 text-white shadow-card">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M12 3v18M3 12h18" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-        </svg>
+      <div className="brand-mark" aria-hidden="true">
+        <span>N</span>
       </div>
-      <div>
-        <p className="text-base font-bold leading-tight tracking-tight text-ink">MedArchive</p>
-        {!compact && <p className="text-xs leading-tight text-ink-faint">Реестр прайсов клиник</p>}
+      <span className="text-lg font-bold uppercase leading-none tracking-tight text-brand-blue">
+        Nomad <span className="font-medium lowercase text-brand-red tracking-normal">medarchive</span>
+      </span>
+    </div>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="mt-12 w-full bg-brand-blue text-white/80">
+      <div className="mx-auto grid w-full max-w-[1440px] grid-cols-1 gap-8 px-4 py-12 sm:px-8 md:grid-cols-4 lg:px-16">
+        <div className="flex flex-col gap-4 md:col-span-2">
+          <div className="flex items-center gap-2.5">
+            <div className="brand-mark" aria-hidden="true">
+              <span>N</span>
+            </div>
+            <span className="text-lg font-bold uppercase leading-none tracking-tight text-white">
+              Nomad <span className="font-medium lowercase text-primary-200 tracking-normal">medarchive</span>
+            </span>
+          </div>
+          <p className="max-w-sm text-sm leading-relaxed text-white/60">
+            Надёжная система архивации и управления медицинскими прайс-листами. Точность и безопасность ваших данных.
+          </p>
+          <span className="mt-4 text-xs text-white/50">© 2026 Nomad MedArchive. Все права защищены.</span>
+        </div>
+
+        <FooterCol title="Навигация" links={["Дашборд", "Поиск услуги", "Партнёры", "Верификация", "Отчёты"]} />
+        <FooterCol title="Информация" links={["Контакты", "О компании", "Политика конфиденциальности", "Условия использования"]} />
       </div>
+    </footer>
+  );
+}
+
+function FooterCol({ title, links }: { title: string; links: string[] }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-white">{title}</h4>
+      {links.map((l) => (
+        <a key={l} href="#" className="text-sm text-white/60 transition-colors hover:text-white">
+          {l}
+        </a>
+      ))}
     </div>
   );
 }

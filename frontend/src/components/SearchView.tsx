@@ -1,25 +1,38 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MagnifyingGlass, ArrowLeft, ArrowRight, Buildings, Tag } from "@phosphor-icons/react";
 import { api, type PartnerWithPrice, type Service, type SearchItem } from "../api";
 import { Badge, Button, Card, EmptyState, Input, LoadingBlock, PageHeader, SkeletonRow } from "./ui";
 import { formatKzt } from "../format";
 
+const QUICK_SEARCHES = [
+  "Анализ крови", "УЗИ", "МРТ", "КТ", "Рентген",
+  "Консультация терапевта", "Консультация кардиолога", "ЭКГ",
+  "Гастроскопия", "Колоноскопия", "Биохимия", "Общий анализ мочи",
+];
+
 export function SearchView() {
   const [q, setQ] = useState("");
   const [services, setServices] = useState<Service[]>([]);
+  const [allServices, setAllServices] = useState<Service[]>([]);
   const [items, setItems] = useState<SearchItem[]>([]);
   const [selected, setSelected] = useState<Service | null>(null);
   const [partnersList, setPartnersList] = useState<PartnerWithPrice[]>([]);
   const [status, setStatus] = useState<"idle" | "loading" | "done">("idle");
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const doSearch = async () => {
-    if (!q.trim()) return;
+  useEffect(() => {
+    api.services().then(setAllServices).catch(() => {});
+  }, []);
+
+  const doSearch = async (query?: string) => {
+    const term = (query ?? q).trim();
+    if (!term) return;
+    if (query) setQ(term);
     setStatus("loading");
     setSelected(null);
     setPartnersList([]);
     try {
-      const r = await api.search(q);
+      const r = await api.search(term);
       setServices(r.services);
       setItems(r.items ?? []);
       setStatus("done");
@@ -63,17 +76,46 @@ export function SearchView() {
                 aria-label="Поиск услуги или партнёра"
               />
             </div>
-            <Button onClick={doSearch} size="lg" icon={<MagnifyingGlass size={18} />} disabled={!q.trim()}>
+            <Button onClick={() => doSearch()} size="lg" icon={<MagnifyingGlass size={18} />} disabled={!q.trim()}>
               Найти
             </Button>
           </div>
 
           {status === "idle" && (
-            <EmptyState
-              icon={<MagnifyingGlass size={24} />}
-              title="Начните поиск"
-              description="Введите название услуги — например «УЗИ» или «общий анализ крови» — чтобы увидеть клиники и цены."
-            />
+            <div className="space-y-5">
+              <p className="text-sm text-ink-muted">Выберите услугу или введите запрос вручную:</p>
+              <div className="flex flex-wrap gap-2">
+                {QUICK_SEARCHES.map((label) => (
+                  <button
+                    key={label}
+                    onClick={() => doSearch(label)}
+                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-subtle bg-surface-white px-4 py-2 text-sm font-medium text-ink transition-all duration-150 hover:border-brand-red hover:bg-primary-50 hover:text-brand-red"
+                  >
+                    <Tag size={14} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {allServices.length > 0 && (
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">Все услуги справочника</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {allServices.slice(0, 30).map((s) => (
+                      <button
+                        key={s.service_id}
+                        onClick={() => openService(s)}
+                        className="inline-flex cursor-pointer items-center rounded-md border border-border-subtle bg-surface-low px-3 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700"
+                      >
+                        {s.service_name}
+                      </button>
+                    ))}
+                    {allServices.length > 30 && (
+                      <span className="self-center text-xs text-ink-faint">+{allServices.length - 30} ещё…</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {status === "loading" && (
@@ -113,10 +155,10 @@ export function SearchView() {
                         </>
                       )}
                     </div>
-                    <div className="mt-1 flex items-end justify-between gap-3 border-t border-line pt-2.5">
+                    <div className="mt-1 flex items-end justify-between gap-3 border-t border-border-subtle pt-2.5">
                       <div>
                         <p className="text-[11px] uppercase tracking-wide text-ink-faint">Резидент</p>
-                        <p className="text-lg font-bold text-primary-300">{formatKzt(it.price_resident_kzt)}</p>
+                        <p className="text-lg font-bold text-brand-red">{formatKzt(it.price_resident_kzt)}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-[11px] uppercase tracking-wide text-ink-faint">Нерезидент</p>
@@ -152,7 +194,7 @@ export function SearchView() {
                           </Badge>
                         )}
                       </div>
-                      <span className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary-300 opacity-80 group-hover:opacity-100">
+                      <span className="flex shrink-0 items-center gap-1 text-sm font-medium text-brand-red opacity-80 group-hover:opacity-100">
                         Сравнить цены <ArrowRight size={16} />
                       </span>
                     </button>
@@ -191,7 +233,7 @@ export function SearchView() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-line bg-canvas text-left text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                    <tr className="border-b border-border-subtle bg-surface-low text-left text-xs font-semibold uppercase tracking-wide text-ink-faint">
                       <th className="px-5 py-3">Партнёр</th>
                       <th className="px-5 py-3 text-right">Резидент</th>
                       <th className="px-5 py-3 text-right">Нерезидент</th>
@@ -200,7 +242,7 @@ export function SearchView() {
                   </thead>
                   <tbody>
                     {partnersList.map((p) => (
-                      <tr key={p.item_id} className="border-b border-line last:border-0 hover:bg-white/[0.03]">
+                      <tr key={p.item_id} className="border-b border-border-subtle last:border-b-0 hover:bg-surface-low/60">
                         <td className="px-5 py-3.5">
                           <p className="font-medium text-ink">{p.partner.name}</p>
                           {p.partner.city && <p className="text-xs text-ink-faint">{p.partner.city}</p>}

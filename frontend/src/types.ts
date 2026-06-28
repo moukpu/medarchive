@@ -1,1 +1,1 @@
-export type Tab = "search" | "partners" | "verify" | "dashboard";
+export type Tab = "dashboard" | "search" | "partners" | "verify" | "reports";
