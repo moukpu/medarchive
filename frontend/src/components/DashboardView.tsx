@@ -290,7 +290,7 @@ export function DashboardView({ onNavigate }: { onNavigate?: (t: Tab) => void })
           <StatCard icon={<Files size={20} weight="duotone" />} value={d?.documents_total ?? 0} label="Документов всего" />
           <StatCard icon={<ListChecks size={20} weight="duotone" />} value={d?.items_total ?? 0} label="Позиций в архиве" />
           <StatCard icon={<Gauge size={20} weight="duotone" />} value={`${(d?.auto_match_rate ?? 0).toFixed(1)}%`} label="Автомэтчинг" />
-          <StatCard icon={<Hourglass size={20} weight="duotone" />} value={(d?.items_needs_review ?? 0) + (d?.items_unmatched ?? 0)} label="Ждут проверки" />
+          <StatCard icon={<Hourglass size={20} weight="duotone" />} value={d?.items_needs_review ?? 0} label="Ждут проверки" />
         </div>
       </section>
 

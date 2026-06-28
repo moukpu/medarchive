@@ -73,7 +73,7 @@ export function ReportsView() {
         <KpiCard icon={<TrendUp size={20} weight="duotone" />} value={`${matchRate.toFixed(1)}%`} label="Автомэтчинг" hint="Доля позиций, привязанных к справочнику без ручной правки." accent />
         <KpiCard icon={<Files size={20} weight="duotone" />} value={d.documents_total.toLocaleString("ru-RU")} label="Документов всего" />
         <KpiCard icon={<CheckCircle size={20} weight="duotone" />} value={d.items_total.toLocaleString("ru-RU")} label="Позиций в архиве" />
-        <KpiCard icon={<WarningCircle size={20} weight="duotone" />} value={(d.items_needs_review + d.items_unmatched).toLocaleString("ru-RU")} label="Ждут проверки" />
+        <KpiCard icon={<WarningCircle size={20} weight="duotone" />} value={d.items_needs_review.toLocaleString("ru-RU")} label="Ждут проверки" />
       </div>
 
       <Card className="mb-8">
