@@ -16,11 +16,17 @@ from app.extractors.router import detect_format
 from app.models import Partner, PriceDocument
 
 _DATE_RE = re.compile(r"(\d{4})[-_.](\d{2})[-_.](\d{2})|(\d{2})[-_.](\d{2})[-_.](\d{4})")
+_YEAR_RE = re.compile(r"\b(20\d{2})\b")
+_NOISE_RE = re.compile(r"\b(прайс|price|год|year|лист|list)\b", re.IGNORECASE)
 _SUPPORTED = (".pdf", ".docx", ".xlsx", ".xls")
 
 
 def parse_filename(name: str) -> tuple[str, date | None]:
-    """Эвристика: вытащить дату и название клиники из имени файла."""
+    """Эвристика: вытащить дату и название клиники из имени файла.
+
+    Извлекает дату (полную YYYY-MM-DD или standalone год → 1 января),
+    затем очищает имя от даты, года, слов «прайс/год/лист».
+    """
     stem = Path(name).stem
     eff: date | None = None
     m = _DATE_RE.search(stem)
@@ -32,8 +38,19 @@ def parse_filename(name: str) -> tuple[str, date | None]:
                 eff = date(int(m.group(6)), int(m.group(5)), int(m.group(4)))
         except ValueError:
             eff = None
+
     clinic = _DATE_RE.sub("", stem)
-    clinic = re.sub(r"[_\-]+", " ", clinic).strip(" .-_")
+    if eff is None:
+        ym = _YEAR_RE.search(clinic)
+        if ym:
+            try:
+                eff = date(int(ym.group(1)), 1, 1)
+            except ValueError:
+                pass
+    clinic = _YEAR_RE.sub("", clinic)
+    clinic = _NOISE_RE.sub("", clinic)
+    clinic = re.sub(r"[_\-]+", " ", clinic)
+    clinic = re.sub(r"\s+", " ", clinic).strip(" .-_")
     return (clinic or stem), eff
 
 
@@ -96,19 +113,29 @@ async def ingest_zip(session: AsyncSession, zip_path: str) -> list[str]:
     return doc_ids
 
 
-async def ingest_single_file(session: AsyncSession, src_path: str) -> str:
-    """Принять один файл (без ZIP). Возвращает doc_id."""
-    batch_dir = settings.uploads_dir / str(uuid.uuid4())
-    batch_dir.mkdir(parents=True, exist_ok=True)
-    dest = batch_dir / Path(src_path).name
-    shutil.copy2(src_path, dest)
-    clinic, eff = parse_filename(dest.name)
+async def ingest_single_file(session: AsyncSession, src_path: str, original_name: str | None = None) -> str:
+    """Принять один файл (без ZIP), загрузить в S3. Возвращает doc_id."""
+    from app.storage import upload_file_to_s3, init_bucket
+    from fastapi import UploadFile
+
+    await init_bucket()
+    file_name = original_name or Path(src_path).name
+    batch_id = str(uuid.uuid4())
+
+    clinic, eff = parse_filename(file_name)
     partner = await get_or_create_partner(session, clinic)
+    fmt = detect_format(src_path)
+
+    object_name = f"{batch_id}/{file_name}"
+    with open(src_path, "rb") as f:
+        upload_file = UploadFile(file=f, filename=file_name)
+        s3_uri = await upload_file_to_s3(upload_file, object_name)
+
     doc = PriceDocument(
         partner_id=partner.partner_id,
-        file_name=dest.name,
-        file_path=str(dest),
-        file_format=detect_format(str(dest)),
+        file_name=file_name,
+        file_path=s3_uri,
+        file_format=fmt,
         effective_date=eff,
     )
     session.add(doc)

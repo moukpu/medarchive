@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from collections import Counter
+
 from app.config import settings
 from app.db import SessionLocal
 from app.extractors.router import get_extractor
@@ -16,9 +18,12 @@ from app.models import (
     ParseStatus,
     PriceDocument,
     PriceItem,
+    Service,
 )
-from app.pipeline.normalize import CatalogIndex
+from app.pipeline.normalize import CatalogIndex, _norm
 from app.pipeline.validate import validate_row
+
+AUTO_CREATE_MIN_COUNT = 2
 
 
 def _looks_low_quality(rows) -> bool:
@@ -62,6 +67,61 @@ async def _prev_resident(session: AsyncSession, partner_id: str, service_name_ra
     )
     item = res.scalars().first()
     return float(item.price_resident_kzt) if item and item.price_resident_kzt is not None else None
+
+
+async def _auto_create_services(session: AsyncSession, log: list[str]) -> None:
+    """Auto-create Service entries for unmatched names that appear >= AUTO_CREATE_MIN_COUNT times."""
+    res = await session.execute(
+        select(PriceItem.service_name_raw)
+        .where(PriceItem.is_active.is_(True), PriceItem.service_id.is_(None))
+    )
+    unmatched_names = [r[0] for r in res.all() if r[0]]
+
+    counts: Counter[str] = Counter()
+    norm_to_raw: dict[str, str] = {}
+    for name in unmatched_names:
+        n = _norm(name)
+        if n:
+            counts[n] += 1
+            if n not in norm_to_raw:
+                norm_to_raw[n] = name
+
+    existing = await session.execute(select(Service.service_name).where(Service.is_active.is_(True)))
+    existing_norms = {_norm(r[0]) for r in existing.all()}
+
+    created = 0
+    for norm_name, count in counts.items():
+        if count < AUTO_CREATE_MIN_COUNT:
+            continue
+        if norm_name in existing_norms:
+            continue
+
+        display_name = norm_to_raw[norm_name]
+        title = display_name[0].upper() + display_name[1:] if display_name else display_name
+        svc = Service(service_name=title, is_active=True)
+        session.add(svc)
+        await session.flush()
+
+        items_res = await session.execute(
+            select(PriceItem).where(
+                PriceItem.is_active.is_(True),
+                PriceItem.service_id.is_(None),
+                PriceItem.service_name_raw.in_(
+                    [n for n in unmatched_names if _norm(n) == norm_name]
+                ),
+            )
+        )
+        for item in items_res.scalars():
+            item.service_id = svc.service_id
+            item.match_method = MatchMethod.exact
+            item.match_score = 1.0
+            item.needs_review = False
+        existing_norms.add(norm_name)
+        created += 1
+
+    if created:
+        log.append(f"Авто-создано {created} услуг справочника из частых несопоставленных позиций")
+        await session.commit()
 
 
 async def process_document(session: AsyncSession, doc_id: str, index: CatalogIndex | None = None) -> None:
@@ -203,6 +263,9 @@ async def process_document(session: AsyncSession, doc_id: str, index: CatalogInd
                 needs_review_doc = True
             if v.warnings:
                 log.append(f"{row.service_name_raw}: " + "; ".join(v.warnings))
+
+        # Auto-create services for popular unmatched names across ALL active items.
+        await _auto_create_services(session, log)
 
         # Документ обрезан по лимитам LLM (страницы/чанки) → часть строк потеряна,
         # требуется ручная проверка. Маркер ставят экстракторы (TRUNCATED_MARK).

@@ -12,16 +12,30 @@ interface ClinicGroup {
   partners: Partner[];
 }
 
+function normalizeClinicName(name: string): string {
+  return name
+    .replace(/\b(20\d{2})\b/g, "")
+    .replace(/\b(прайс|price|год|year|лист|list)\b/gi, "")
+    .replace(/[_\-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 function groupClinicsByName(partners: Partner[]): ClinicGroup[] {
   const map = new Map<string, Partner[]>();
+  const displayNames = new Map<string, string>();
   for (const p of partners) {
-    const key = p.name.trim().toLowerCase();
+    const key = normalizeClinicName(p.name);
     const arr = map.get(key);
     if (arr) arr.push(p);
-    else map.set(key, [p]);
+    else {
+      map.set(key, [p]);
+      displayNames.set(key, p.name.replace(/\b(20\d{2})\b/g, "").replace(/\b(прайс|price|год|year|лист|list)\b/gi, "").replace(/\s+/g, " ").trim());
+    }
   }
-  return [...map.entries()].map(([, partners]) => ({
-    name: partners[0].name,
+  return [...map.entries()].map(([key, partners]) => ({
+    name: displayNames.get(key) || partners[0].name,
     partners,
   }));
 }

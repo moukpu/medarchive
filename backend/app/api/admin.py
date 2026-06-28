@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import SessionLocal, get_session
 from app.models import PriceDocument, PriceItem
-from app.pipeline.ingest import ingest_zip
+from app.pipeline.ingest import ingest_zip, ingest_single_file
 from app.pipeline.runner import process_pending
 from app.schemas import DashboardOut, DocumentStatusOut
 
@@ -33,13 +33,21 @@ async def upload_archive(
     file: UploadFile,
     session: AsyncSession = Depends(get_session),
 ):
-    """Принять ZIP-архив, сохранить файлы в S3, закинуть ID в Redis/Arq очередь."""
-    suffix = Path(file.filename or "archive.zip").suffix or ".zip"
+    """Принять ZIP-архив или отдельный файл (PDF/XLSX/DOCX), обработать."""
+    filename = file.filename or "file"
+    suffix = Path(filename).suffix.lower() or ".zip"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(await file.read())
         tmp_path = tmp.name
-        
-    doc_ids = await ingest_zip(session, tmp_path)
+
+    if suffix == ".zip":
+        doc_ids = await ingest_zip(session, tmp_path)
+    elif suffix in (".pdf", ".xlsx", ".xls", ".docx"):
+        doc_id = await ingest_single_file(session, tmp_path, original_name=filename)
+        doc_ids = [doc_id]
+    else:
+        from fastapi import HTTPException
+        raise HTTPException(400, f"Формат {suffix} не поддерживается. Допустимые: ZIP, PDF, XLSX, DOCX.")
     
     # Enqueue tasks in Arq Redis queue (with fallback)
     try:

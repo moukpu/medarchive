@@ -144,7 +144,7 @@ export function DashboardView({ onNavigate }: { onNavigate?: (t: Tab) => void })
       }
     } catch {
       setError(true);
-      setMsg("Не удалось загрузить архив. Проверьте формат (.zip) и попробуйте снова.");
+      setMsg("Не удалось загрузить файл. Допустимые форматы: ZIP, PDF, XLSX, DOCX.");
     } finally {
       setUploading(false);
     }
@@ -218,19 +218,19 @@ export function DashboardView({ onNavigate }: { onNavigate?: (t: Tab) => void })
               </div>
               <div>
                 <p className="text-sm font-semibold text-ink-strong">Перетащите файлы сюда</p>
-                <p className="mt-1 text-xs text-ink-faint">PDF, Excel, Word, JPG (.zip до 50 МБ)</p>
+                <p className="mt-1 text-xs text-ink-faint">PDF, Excel, Word — отдельно или в ZIP (до 50 МБ)</p>
               </div>
               <div className="relative my-1 w-full">
                 <span className="block h-px w-full bg-border-subtle" />
                 <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-surface-white px-2 text-[10px] font-semibold uppercase tracking-widest text-ink-faint">или</span>
               </div>
               <Button onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }} disabled={uploading} className="w-full">
-                Выбрать ZIP-файл
+                Выбрать файл
               </Button>
               <input
                 ref={inputRef}
                 type="file"
-                accept=".zip"
+                accept=".zip,.pdf,.xlsx,.xls,.docx"
                 className="hidden"
                 onChange={(e) => {
                   upload(e.target.files?.[0]);
